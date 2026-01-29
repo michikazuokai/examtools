@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="/Users/michikazuokai/Library/CloudStorage/GoogleDrive-om036702@ga.ttc.ac.jp/マイドライブ/examProj/examproj/db.sqlite3" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="1"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="2475"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><current_table name="4,17:mainexam_systemconfig"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="auth_group" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_"><sort/><column_widths><column index="1" value="18"/><column index="2" value="36"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table><table schema="main" name="exam_systemconfig" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_"><sort/><column_widths><column index="1" value="18"/><column index="2" value="73"/><column index="3" value="36"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="SQL 1">CREATE TABLE new_versions (
+    hash TEXT,
+    version INTEGER,
+    inputpath TEXT,
+    sheetname TEXT,
+    createdatetime TEXT,
+    note TEXT,
+    PRIMARY KEY (hash, version)
+);</sql><sql name="SQL 2">INSERT INTO new_versions (hash, version, inputpath, sheetname, createdatetime, note)
+SELECT hash, version, inputpath, sheetname, createdatetime, note FROM versions;</sql><sql name="SQL 3">DROP TABLE versions;
+</sql><sql name="SQL 4">ALTER TABLE new_versions RENAME TO versions;</sql><current_tab id="3"/></tab_sql></sqlb_project>

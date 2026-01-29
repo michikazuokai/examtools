@@ -1,0 +1,13 @@
+# macOS固有ファイル
+.DS_Store
+examProj.code-workspace
+
+input/*
+!input/試験問題.xlsx
+!input/試験問題_旧フォーマット.xlsx
+work/
+output/
+images/
+sandbox/
+zarchive/
+__pycache__/

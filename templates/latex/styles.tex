@@ -1,0 +1,24 @@
+% templates/latex/styles.tex
+
+% NOTE:
+% - Keep visual styling here.
+% - Do NOT pass listings options through pgfkeys; always configure via \lstset.
+% - If you want to tweak question label widths etc., do it here (after macros.tex is loaded).
+
+\setlist[itemize]{topsep=0pt,itemsep=0pt,parsep=0pt,labelsep=3mm}
+\setlist[enumerate]{topsep=0pt,itemsep=0pt,parsep=0pt,labelsep=3mm}
+
+% C言語のコード表示設定
+\lstset{
+  language=C,
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single,
+  breaklines=true,
+  showstringspaces=false,
+  xleftmargin=20pt,
+  numbers=none,
+  aboveskip=8pt,
+  belowskip=6pt
+}

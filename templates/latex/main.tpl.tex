@@ -1,0 +1,17 @@
+% templates/latex/main.tpl.tex
+\documentclass[paper=a4,fontsize=11pt,heading=true]{jlreq}
+
+\input{preamble.tex}
+
+% NOTE: macros define lengths/envs that styles may override.
+% So load macros first, then styles.
+\input{macros.tex}
+
+\input{styles.tex}
+
+\begin{document}
+
+% --- optional: cover or header ---
+@@BODY@@
+
+\end{document}

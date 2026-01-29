@@ -1,0 +1,291 @@
+% ============================================================
+% macros_v2.tex (exam)
+% ============================================================
+
+% ---- counters ----
+\newcounter{qno}
+\newcounter{subno}
+\newif\ifInSubquestion
+\InSubquestionfalse
+
+% ---- layout lengths (override in styles.tex if you like) ----
+\newlength{\Qlabelw} \setlength{\Qlabelw}{5mm}
+\newlength{\Qsep}    \setlength{\Qsep}{1mm}
+\newlength{\QsepSub} \setlength{\QsepSub}{8mm} % ←小問だけ広げたい間隔（例）
+\newlength{\QBefore} \setlength{\QBefore}{1.0mm}
+\newlength{\QAfter}  \setlength{\QAfter}{1.5mm}
+% choices の開始位置（右寄せ量）を小問だけ増やす
+\newlength{\ChoiceIndentMain} \setlength{\ChoiceIndentMain}{12mm} % ←大問 choices の開始位置（必要に応じて調整）
+\newlength{\ChoiceSubExtra} \setlength{\ChoiceSubExtra}{3mm} % 小問だけ、さらに右へ（好みで調整）
+
+\newlength{\SubIndent}      \setlength{\SubIndent}{10mm} % change later if needed
+\newlength{\SubBlockBefore} \setlength{\SubBlockBefore}{1.0mm}
+\newlength{\SubBlockAfter}  \setlength{\SubBlockAfter}{1.0mm}
+% question本文の開始位置（番号＋隙間）
+\newlength{\QBodyIndent} \setlength{\QBodyIndent}{0pt}
+\newlength{\ChoiceIndentTmp} % choices 用の一時長さ（1回だけ定義）
+
+% sline/multiline の開始位置（大問/小問で切替）
+\newlength{\TextIndentMain} \setlength{\TextIndentMain}{8mm} % 大問のsline/multiline開始位置
+\newlength{\TextIndentSubExtra} \setlength{\TextIndentSubExtra}{4mm} % 小問だけ追加で右へ（好みで調整）
+\newlength{\TextIndentTmp} % 一時用（毎回newlengthしない）
+
+% ---- pgfkeys family ----
+\pgfkeys{/exam/.is family, /exam,
+  type/.initial=normal,
+  sep/.initial=8,         % mm
+  cols/.initial=4, % ★追加
+  before/.initial=0,      % mm
+  after/.initial=0,       % mm
+  % NOTE: makelatex emits linenumber=true|false (string).
+  % We also accept 1/0 for backward compatibility.
+  linenumber/.initial=false,
+}
+
+% ---- helpers ----
+\NewDocumentCommand{\ChoiceLabel}{m}{#1} % customize: (A) / A) / etc.
+
+% makelatex emits \citem{A}{...}. Use one canonical item macro.
+\NewDocumentCommand{\citem}{m m}{\item[\ChoiceLabel{#1}] #2}
+
+% ============================================================
+% Cover page
+%  \ExamCover{<title>}{<notes>}[<footer>]
+% - cover page has NO page number
+% - after cover: page numbering starts from 1 (arabic)
+% ============================================================
+
+\NewDocumentCommand{\ExamCover}{m m O{}}{%
+  \clearpage
+  \begingroup
+    \pagestyle{empty}%
+    \thispagestyle{empty}
+    \begin{center}
+
+      \vspace*{16mm}
+
+      % ----------------------------
+      % 文字（普通幅）→ 後から枠を描く（15cm x 3.5cm）
+      % ----------------------------
+      \begin{tikzpicture}[remember picture]
+        \node (C) [align=center] {%
+          {\Huge #1}\\
+          {\Huge 履修判定試験}%
+        };
+      \end{tikzpicture}%
+      \begin{tikzpicture}[remember picture,overlay]
+        \draw[line width=0.6pt]
+          ($(C.center)+(-7.25cm,-1.75cm)$) rectangle
+          ($(C.center)+( 7.25cm, 1.75cm)$);
+      \end{tikzpicture}
+
+      \vspace{75mm}
+
+      \begin{tikzpicture}[remember picture]
+        % 先に中身（文字）を出す：文字間隔は普通のまま
+        \node (N) [align=left] {%
+          \begin{minipage}{15cm}
+            \raggedright
+            {\large
+              \begin{itemize}
+                \setlength{\itemsep}{0.3em}
+                \setlength{\topsep}{0pt}
+                #2%
+              \end{itemize}
+            }%
+          \end{minipage}
+        };
+      \end{tikzpicture}%
+      \begin{tikzpicture}[remember picture,overlay]
+        % あとから枠だけ描く：15cm×3.5cm固定
+        \draw[line width=0.6pt]
+          ($(N.center)+(-7.75cm,-2.25cm)$) rectangle
+          ($(N.center)+( 7.75cm, 2.25cm)$);
+      \end{tikzpicture}
+
+      \vfill
+      {\Large 専門学校\par}
+      {\Large 東京テクニカルカレッジ\par}
+
+    \end{center}
+  \endgroup
+
+  % ===== Cover page 2 (footer only) =====
+  \clearpage
+  \begingroup
+    \pagestyle{empty}%
+    \thispagestyle{empty}%
+
+    % 何もないとページが出ないので最小の中身
+    \null\vfill
+
+    % 右下に #3 だけ出す（ページ番号は出ない）
+%    \noindent\hfill{\small\ttfamily #3}\par
+    \noindent\hfill{\small\ttfamily\color{black!45} #3}\par
+  \endgroup
+
+  \clearpage
+  \pagestyle{fancy}%
+  \setcounter{page}{1}%
+}
+
+% ---- question env ----
+\NewDocumentEnvironment{question}{m}{%
+  \par\vspace*{\QBefore}%
+  \ifInSubquestion
+    \stepcounter{subno}%
+    \edef\examLabelTmp{\theqno-\thesubno}%
+    \def\examSepTmp{\QsepSub}% ←小問は広い
+  \else
+    \stepcounter{qno}%
+    \setcounter{subno}{0}%
+    \edef\examLabelTmp{\theqno}%
+    \def\examSepTmp{\Qsep}% ←大問は従来
+  \fi
+  \noindent
+  \setlength{\QBodyIndent}{\dimexpr\Qlabelw+\examSepTmp\relax}%
+  \makebox[\Qlabelw][l]{\textbf{\examLabelTmp}}%
+  \hspace{\examSepTmp}%
+  \parbox[t]{\dimexpr\linewidth-\Qlabelw-\examSepTmp\relax}{\textbf{#1}}%
+  \par\vspace*{\QAfter}%
+}{%
+  \par\vspace{0.8\baselineskip}
+}
+
+% ---- subquestion env ----
+\NewDocumentEnvironment{subquestion}{}{%
+  \par\vspace*{\SubBlockBefore}%
+  \begingroup
+  \InSubquestiontrue
+  \begin{list}{}{\setlength{\leftmargin}{\SubIndent}\setlength{\rightmargin}{0pt}}
+  \item[]
+}{%
+  \end{list}
+  \InSubquestionfalse
+  \endgroup
+  \par\vspace*{\SubBlockAfter}%
+}
+
+% ---- sline ----
+\NewDocumentCommand{\sline}{O{} m}{%
+  \pgfkeys{/exam, before=0, after=0, #1}%
+  \edef\SLBefore{\pgfkeysvalueof{/exam/before}}%
+  \edef\SLAfter{\pgfkeysvalueof{/exam/after}}%
+
+  % インデント決定（大問/小問）
+  \ifInSubquestion
+    \setlength{\TextIndentTmp}{\QBodyIndent}%
+    \addtolength{\TextIndentTmp}{\TextIndentSubExtra}%
+  \else
+    \setlength{\TextIndentTmp}{\TextIndentMain}%
+  \fi
+
+  \ifdim\SLBefore mm=0mm\else\vspace*{\SLBefore mm}\fi%
+  \noindent\hspace*{\TextIndentTmp}#2\par%
+  \ifdim\SLAfter mm=0mm\else\vspace*{\SLAfter mm}\fi%
+}
+
+% ---- multiline ----
+\NewDocumentEnvironment{multiline}{O{}}{%
+  \pgfkeys{/exam, before=0, after=0, #1}%
+  \edef\MLBefore{\pgfkeysvalueof{/exam/before}}%
+  \edef\MLAfter{\pgfkeysvalueof{/exam/after}}%
+
+  % インデント決定（大問/小問）
+  \ifInSubquestion
+    \setlength{\TextIndentTmp}{\QBodyIndent}%
+    \addtolength{\TextIndentTmp}{\TextIndentSubExtra}%
+  \else
+    \setlength{\TextIndentTmp}{\TextIndentMain}%
+  \fi
+
+  \ifdim\MLBefore mm=0mm\else\vspace*{\MLBefore mm}\fi%
+  \begingroup
+  \setlength{\parindent}{0pt}%
+  \leftskip=\TextIndentTmp % ←複数行をまとめて右寄せ
+}{%
+  \endgroup
+  \ifdim\MLAfter mm=0mm\else\vspace*{\MLAfter mm}\fi%
+}
+
+\NewDocumentCommand{\mline}{m}{#1\par}
+
+% ---- image ----
+\NewDocumentCommand{\image}{m m}{%
+  \begin{center}
+    \includegraphics[width=#2\textwidth]{#1}%
+  \end{center}
+}
+
+% % ---- code ----
+% % IMPORTANT: listings is a verbatim-like environment.
+% % Do NOT wrap \begin{lstlisting} inside \NewDocumentEnvironment; it causes
+% % "Emergency stop" / end-scanning failures.
+% % Use \lstnewenvironment so the body is treated as listings verbatim.
+
+\makeatletter
+\@ifundefined{code}{%
+  \lstnewenvironment{code}[1][]{%
+    \begingroup%
+    \pgfkeys{/exam, linenumber=false, #1}%
+    \edef\examln{\pgfkeysvalueof{/exam/linenumber}}%
+    \def\examtrue{true}%
+    \def\examone{1}%
+    \ifx\examln\examtrue%
+      \lstset{numbers=left, numberstyle=\footnotesize, stepnumber=1, numbersep=8pt}%
+    \else\ifx\examln\examone%
+      \lstset{numbers=left, numberstyle=\footnotesize, stepnumber=1, numbersep=8pt}%
+    \else%
+      \lstset{numbers=none}%
+    \fi\fi%
+  }{%
+    \endgroup%
+  }%
+}{}%
+\makeatother
+
+
+% ==============================
+% choices (single env, robust)
+% - type=normal : vertical
+% - type=inline : horizontal (enumitem itemize*)
+% ==============================
+
+% ---- choices ----
+\NewDocumentEnvironment{choices}{O{}}{%
+  \begingroup
+  \pgfkeys{/exam, type=normal, sep=8, #1}%
+  \edef\examChoiceType{\pgfkeysvalueof{/exam/type}}%
+  \edef\examChoiceSep{\pgfkeysvalueof{/exam/sep}}%
+
+  % ★ choices の開始位置（基本は本文開始位置に合わせる）
+  \setlength{\ChoiceIndentTmp}{\QBodyIndent}%
+  % ★ 小問だけ追加で右へ
+  \ifInSubquestion
+    \setlength{\ChoiceIndentTmp}{\QBodyIndent}%
+    \addtolength{\ChoiceIndentTmp}{\ChoiceSubExtra}%
+  \else
+    \setlength{\ChoiceIndentTmp}{\ChoiceIndentMain}%
+  \fi
+
+  \ifstrequal{\examChoiceType}{inline}{%
+    \begin{itemize*}[
+      label={},
+      leftmargin=\ChoiceIndentTmp,
+      itemjoin=\hspace*{\examChoiceSep mm},
+      itemjoin*=\hspace*{\examChoiceSep mm},
+      before=\vspace{0mm},
+      after=\vspace{0mm}
+    ]%
+  }{%
+    \begin{itemize}[
+      label={},
+      leftmargin=\ChoiceIndentTmp,
+      itemsep=0.6mm,
+      topsep=0.6mm
+    ]%
+  }%
+}{%
+  \ifstrequal{\examChoiceType}{inline}{\end{itemize*}}{\end{itemize}}%
+  \endgroup
+}

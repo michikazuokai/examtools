@@ -1,0 +1,413 @@
+% ============================================================
+% macros_v2.tex (exam)
+% ============================================================
+\typeout{[MACROS] macros_v2.tex LOADED}
+
+% ---- counters ----
+\newcounter{qno}
+\newcounter{subno}
+\newif\ifInSubquestion
+\InSubquestionfalse
+
+% ---- multiline -> choices gap fix ----
+\newif\ifAfterMultiline
+\AfterMultilinefalse
+
+% まずはこの値から（あとで微調整）
+\newlength{\MLtoChoiceTightNormal} \setlength{\MLtoChoiceTightNormal}{-7mm}
+\newlength{\MLtoChoiceTightInline} \setlength{\MLtoChoiceTightInline}{-8mm}
+
+
+% ---- layout lengths (override in styles.tex if you like) ----
+\newlength{\Qlabelw} \setlength{\Qlabelw}{5mm}
+\newlength{\Qsep}    \setlength{\Qsep}{1mm}
+\newlength{\QsepSub} \setlength{\QsepSub}{8mm} % ←小問だけ広げたい間隔（例）
+\newlength{\QBefore} \setlength{\QBefore}{1.0mm}
+\newlength{\QAfter}  \setlength{\QAfter}{1.5mm}
+% choices の開始位置（右寄せ量）を小問だけ増やす
+\newlength{\ChoiceIndentMain} \setlength{\ChoiceIndentMain}{12mm} % ←大問 choices の開始位置（必要に応じて調整）
+\newlength{\ChoiceSubExtra} \setlength{\ChoiceSubExtra}{3mm} % 小問だけ、さらに右へ（好みで調整）
+
+\newlength{\SubIndent}      \setlength{\SubIndent}{10mm} % change later if needed
+\newlength{\SubBlockBefore} \setlength{\SubBlockBefore}{1.0mm}
+\newlength{\SubBlockAfter}  \setlength{\SubBlockAfter}{1.0mm}
+% question本文の開始位置（番号＋隙間）
+\newlength{\QBodyIndent} \setlength{\QBodyIndent}{0pt}
+\newlength{\ChoiceIndentTmp} % choices 用の一時長さ（1回だけ定義）
+
+% sline/multiline の開始位置（大問/小問で切替）
+\newlength{\TextIndentMain} \setlength{\TextIndentMain}{8mm} % 大問のsline/multiline開始位置
+\newlength{\TextIndentSubExtra} \setlength{\TextIndentSubExtra}{4mm} % 小問だけ追加で右へ（好みで調整）
+\newlength{\TextIndentTmp} % 一時用（毎回newlengthしない）
+
+% --- labelと本文の間隔（追加） ---
+\newlength{\ChoiceLabelSepInline}
+\newlength{\ChoiceLabelSepNormal}
+
+% 初期値（好みで調整）
+\setlength{\ChoiceLabelSepInline}{4mm} % inlineは少し広め推奨
+\setlength{\ChoiceLabelSepNormal}{4mm} % normalは控えめでもOK
+
+
+\newcommand{\DBGvsp}[1]{%
+  \typeout{[DBG] #1 : vmode=\ifvmode YES\else NO\fi, parskip=\the\parskip, lastskip=\the\lastskip, baselineskip=\the\baselineskip}%
+}
+
+
+
+% ---- pgfkeys family ----
+\pgfkeys{/exam/.is family, /exam,
+  type/.initial=normal,
+  sep/.initial=8,         % mm
+  cols/.initial=4, % ★追加
+  before/.initial=0,      % mm
+  after/.initial=0,       % mm
+  % NOTE: makelatex emits linenumber=true|false (string).
+  % We also accept 1/0 for backward compatibility.
+  linenumber/.initial=false,
+}
+
+\pgfkeys{/exam/vspace/.initial=0mm}
+
+% ---- helpers ----
+\NewDocumentCommand{\ChoiceLabel}{m}{#1} % customize: (A) / A) / etc.
+
+% makelatex emits \citem{A}{...}. Use one canonical item macro.
+%\NewDocumentCommand{\citem}{m m}{\item[\ChoiceLabel{#1}] #2}
+\NewDocumentCommand{\citem}{m m}{\item[\ChoiceLabel{#1}]#2}
+
+
+% ============================================================
+% Cover page
+%  \ExamCover{<title>}{<notes>}[<footer>]
+% - cover page has NO page number
+% - after cover: page numbering starts from 1 (arabic)
+% ============================================================
+\NewDocumentCommand{\ExamCover}{m m O{}}{%
+  \gdef\ExamTitle{#1}% ★追加：第1引数をフッター用に保存（global）
+  \clearpage
+  \begingroup
+    \pagestyle{empty}%
+    \thispagestyle{empty}
+
+    \begin{tikzpicture}[remember picture,overlay]
+      % 例：ページ上部からの固定位置にタイトル枠を置く yshiftで上下の位置指定
+      \node[
+        draw, line width=0.6pt,
+        minimum width=15cm, minimum height=3.5cm,
+        align=center, inner sep=0pt,
+        anchor=north
+      ] at ([yshift=-25mm]current page.north) {%
+        {\Huge #1}\\{\Huge 履修判定試験}%
+      };
+
+      % 例：同様に注意事項枠を固定位置へ
+      \node[
+        draw, line width=0.6pt,
+        minimum width=15.5cm, minimum height=4.5cm,
+        align=left, inner sep=6mm,
+        anchor=north
+      ] at ([yshift=-120mm]current page.north) {%
+        \begin{minipage}{15cm}
+          \raggedright
+          {\large
+            \begin{itemize}
+              \setlength{\itemsep}{0.3em}
+              \setlength{\topsep}{0pt}
+              #2%
+            \end{itemize}
+          }%
+        \end{minipage}
+      };
+
+      % 学校名（下寄せ例）
+      \node[align=center] at ([yshift=18mm]current page.south) {%
+        {\Large 専門学校}\\{\Large 東京テクニカルカレッジ}%
+      };
+    \end{tikzpicture}
+
+  \endgroup
+
+
+  % ===== Cover page 2 (footer only) =====
+  \clearpage
+  \begingroup
+    \pagestyle{empty}%
+    \thispagestyle{empty}%
+
+    % 何もないとページが出ないので最小の中身
+    \null\vfill
+
+    % 右下に #3 だけ出す（ページ番号は出ない）
+%    \noindent\hfill{\small\ttfamily #3}\par
+    \noindent\hfill{\small\ttfamily\color{black!45} #3}\par
+  \endgroup
+
+  \clearpage
+  \pagestyle{fancy}%
+  \setcounter{page}{1}%
+}
+
+% ---- question env ----
+\NewDocumentEnvironment{question}{m}{%
+  \par\vspace*{\QBefore}%
+  \ifInSubquestion
+    \stepcounter{subno}%
+    \edef\examLabelTmp{\theqno-\thesubno}%
+    \def\examSepTmp{\QsepSub}% ←小問は広い
+  \else
+    \stepcounter{qno}%
+    \setcounter{subno}{0}%
+    \edef\examLabelTmp{\theqno}%
+    \def\examSepTmp{\Qsep}% ←大問は従来
+  \fi
+  \noindent
+  \setlength{\QBodyIndent}{\dimexpr\Qlabelw+\examSepTmp\relax}%
+  \makebox[\Qlabelw][l]{\textbf{\examLabelTmp}}%
+  \hspace{\examSepTmp}%
+  \parbox[t]{\dimexpr\linewidth-\Qlabelw-\examSepTmp\relax}{\textbf{#1}}%
+  \par\vspace*{\QAfter}%
+}{%
+  \global\AfterMultilinefalse % ★これを追加：次の問題へ持ち越さない
+  \par\vspace{0.8\baselineskip}
+}
+
+% ---- subquestion env ----
+\NewDocumentEnvironment{subquestion}{}{%
+  \par\vspace*{\SubBlockBefore}%
+  \begingroup
+  \InSubquestiontrue
+%%  \begin{list}{}{\setlength{\leftmargin}{\SubIndent}\setlength{\rightmargin}{0pt}}
+  \begin{list}{}{%
+    \setlength{\leftmargin}{\SubIndent}%
+    \setlength{\rightmargin}{0pt}%
+    \setlength{\topsep}{0pt}%      ★追加：subquestion直後の上余白
+    \setlength{\partopsep}{0pt}%   ★追加：段落直後の追加余白
+    \setlength{\parsep}{0pt}%      ★追加
+    \setlength{\itemsep}{0pt}%     ★追加
+  }
+  \item[]
+}{%
+  \end{list}
+  \InSubquestionfalse
+  \endgroup
+  \global\AfterMultilinefalse % ★追加：小問ブロックを跨いで誤爆しないようにする
+  \par\vspace*{\SubBlockAfter}%
+}
+
+% ---- sline ----
+\NewDocumentCommand{\sline}{O{} m}{%
+  \pgfkeys{/exam, before=0, after=0, #1}%
+  \edef\SLBefore{\pgfkeysvalueof{/exam/before}}%
+  \edef\SLAfter{\pgfkeysvalueof{/exam/after}}%
+
+  % インデント決定（大問/小問）
+  \ifInSubquestion
+    \setlength{\TextIndentTmp}{\QBodyIndent}%
+    \addtolength{\TextIndentTmp}{\TextIndentSubExtra}%
+  \else
+    \setlength{\TextIndentTmp}{\TextIndentMain}%
+  \fi
+
+  \ifdim\SLBefore mm=0mm\else\vspace*{\SLBefore mm}\fi%
+  \noindent\hspace*{\TextIndentTmp}#2\par%
+  \ifdim\SLAfter mm=0mm\else\vspace*{\SLAfter mm}\fi%
+}
+
+% ---- multiline ----
+\NewDocumentEnvironment{multiline}{O{}}{%
+  \pgfkeys{/exam, before=0, after=0, #1}%
+  \edef\MLBefore{\pgfkeysvalueof{/exam/before}}%
+  \edef\MLAfter{\pgfkeysvalueof{/exam/after}}%
+
+  % インデント決定（大問/小問）
+  \ifInSubquestion
+    \setlength{\TextIndentTmp}{\QBodyIndent}%
+    \addtolength{\TextIndentTmp}{\TextIndentSubExtra}%
+  \else
+    \setlength{\TextIndentTmp}{\TextIndentMain}%
+  \fi
+
+  \ifdim\MLBefore mm=0mm\else\vspace*{\MLBefore mm}\fi%
+  \begingroup
+  \setlength{\parindent}{0pt}%
+  \leftskip=\TextIndentTmp % ←複数行をまとめて右寄せ
+}{%
+  \par % 段落を確定
+  \endgroup
+  \global\AfterMultilinetrue % ★「次がchoicesなら補正してね」のフラグ
+  \DBGvsp{ML-end (after endgroup)}%
+%%  \vspace*{-5.0mm}% ★ 少し上に引っ張って隙間を殺す
+  \ifdim\MLAfter mm=0mm\else\vspace*{\MLAfter mm}\fi%
+}
+
+\NewDocumentCommand{\mline}{m}{#1\par}
+
+% ---- image ----
+\NewDocumentCommand{\image}{m m}{%
+  \begin{center}
+    \includegraphics[width=#2\textwidth]{#1}%
+  \end{center}
+}
+
+% % ---- code ----
+% % IMPORTANT: listings is a verbatim-like environment.
+% % Do NOT wrap \begin{lstlisting} inside \NewDocumentEnvironment; it causes
+% % "Emergency stop" / end-scanning failures.
+% % Use \lstnewenvironment so the body is treated as listings verbatim.
+
+% ---- safe listdepth getter for logging ----
+\makeatletter
+\newcommand{\DBGlistdepth}{\number\@listdepth} % ← \the\@listdepth でも可
+\makeatother
+
+% ---- choices debug helper ----
+\newcommand{\DBGchoices}[1]{%
+  \typeout{[CHO-DBG] #1 : line=\number\inputlineno, InSubq=\ifInSubquestion TRUE\else FALSE\fi, %
+    listdepth=\DBGlistdepth, vmode=\ifvmode YES\else NO\fi, lastskip=\the\lastskip}%
+}
+
+
+
+
+\makeatletter
+\@ifundefined{code}{%
+  \lstnewenvironment{code}[1][]{%
+    \begingroup%
+    \pgfkeys{/exam, linenumber=false, #1}%
+    \edef\examln{\pgfkeysvalueof{/exam/linenumber}}%
+    \def\examtrue{true}%
+    \def\examone{1}%
+    \ifx\examln\examtrue%
+      \lstset{numbers=left, numberstyle=\footnotesize, stepnumber=1, numbersep=8pt}%
+    \else\ifx\examln\examone%
+      \lstset{numbers=left, numberstyle=\footnotesize, stepnumber=1, numbersep=8pt}%
+    \else%
+      \lstset{numbers=none}%
+    \fi\fi%
+  }{%
+    \endgroup%
+  }%
+}{}%
+\makeatother
+
+
+% ==============================
+% choices (single env, robust)
+% - type=normal : vertical
+% - type=inline : horizontal (enumitem itemize*)
+% ==============================
+% --- choices indent tuning (1回だけ定義) ---
+\newlength{\ChoiceInlineAdjustMain} % 大問 inline を左右に微調整（負なら左）
+\newlength{\ChoiceNormalAdjustSub}  % 小問 normal を右へ微調整（正なら右）
+
+% 初期値（まずはこのくらいから試す）
+\setlength{\ChoiceInlineAdjustMain}{-3mm} % 大問 inline を少し左へ
+\setlength{\ChoiceNormalAdjustSub}{3mm}   % 小問 normal を少し右へ
+
+% choices内部で使う作業用
+\newlength{\ChoiceIndentInline}
+\newlength{\ChoiceIndentNormal}
+
+% ---- choices ----
+\NewDocumentEnvironment{choices}{O{}}{%
+  \begingroup
+
+  % keys
+  \pgfkeys{/exam/.cd, type=normal, sep=8, vspace=3mm, #1}%
+  \edef\examChoiceType{\pgfkeysvalueof{/exam/type}}%
+  \edef\examChoiceSep{\pgfkeysvalueof{/exam/sep}}%
+  \edef\examChoiceVspace{\pgfkeysvalueof{/exam/vspace}}%
+
+  % ★ 直前が multiline のときだけ、余計な縦間隔を打ち消す（影響範囲を局所化）
+  \ifAfterMultiline
+    \global\AfterMultilinefalse
+    \par\nointerlineskip
+    \ifdefstring{\examChoiceType}{inline}{%
+      \vspace*{\MLtoChoiceTightInline}%
+      \typeout{[ML2C] applied inline tighten=\the\MLtoChoiceTightInline}%
+    }{%
+      \vspace*{\MLtoChoiceTightNormal}%
+      \typeout{[ML2C] applied normal tighten=\the\MLtoChoiceTightNormal}%
+    }%
+  \fi
+
+  % % ★ choices の前に空き（縦横どちらにも効く）
+  % \par\vspace*{\examChoiceVspace}%
+  % ★ choices の前に空き（積み上がりを防ぐ）
+  \DBGvsp{CHOICES-begin (before addvspace)}%
+  \par\addvspace{\examChoiceVspace}% ←★ここを vspace* から addvspace に
+  \DBGvsp{CHOICES-begin (after addvspace)}%
+
+  % ★ まず「共通の基準インデント」を決める（大問/小問）
+  \setlength{\ChoiceIndentTmp}{\ChoiceIndentMain}%
+  \ifInSubquestion
+    \addtolength{\ChoiceIndentTmp}{\ChoiceSubExtra}%
+  \fi
+
+  % ★ 表示用インデントを分ける（normal用 / inline用）
+  \setlength{\ChoiceIndentNormal}{\ChoiceIndentTmp}%
+  \setlength{\ChoiceIndentInline}{\ChoiceIndentTmp}%
+
+  % ★ 要望に合わせて“条件付き補正”
+  %   - 大問：inline を少し左へ（大問 normal と合わせる）
+  %   - 小問：normal を少し右へ（小問 inline と合わせる）
+  \ifInSubquestion
+    \addtolength{\ChoiceIndentNormal}{\ChoiceNormalAdjustSub}%
+  \else
+    \addtolength{\ChoiceIndentInline}{\ChoiceInlineAdjustMain}%
+  \fi
+
+  \typeout{[choicesxx] InSubq=\ifInSubquestion TRUE\else FALSE\fi, %
+    Tmp=\the\ChoiceIndentTmp, Normal=\the\ChoiceIndentNormal, Inline=\the\ChoiceIndentInline}%
+  \typeout{[choices] type=\examChoiceType, sep=\examChoiceSep, vspace=\examChoiceVspace}%
+
+  % ---- inline / normal ----
+  \ifdefstring{\examChoiceType}{inline}{%
+    % ★ inline は minipage を右にずらして「箱ごと」インデント（確実）
+    % \par\noindent
+    \noindent % ←★ここを \par\noindent から \noindent に
+    \hspace*{\ChoiceIndentInline}%
+    \begin{minipage}[t]{\dimexpr\linewidth-\ChoiceIndentInline\relax}
+
+    \begin{itemize*}[
+      label={},
+      leftmargin=0pt,
+    %  labelsep=\ChoiceLabelSepInline, % ★追加：ラベルと本文の間隔
+      afterlabel=\hspace*{\ChoiceLabelSepInline}, % ★ここが効く
+      topsep=0pt,       % ★追加
+      partopsep=0pt,    % ★追加（段落直後の余白を殺す）
+      parsep=0pt,       % ★追加
+      itemjoin=\hspace*{\examChoiceSep mm},
+      itemjoin*=\hspace*{\examChoiceSep mm},
+      before=\vspace{0mm},
+      after=\vspace{0mm}
+    ]%
+    \DBGchoices{INLINE (just after begin itemize*)}%
+  %  \RenewDocumentCommand{\citem}{m m}{\item \ChoiceLabel{##1}\ ##2}%
+  %   \RenewDocumentCommand{\citem}{m m}{\item \ChoiceLabel{##1}\hspace{\ChoiceLabelSepInline}##2}%
+  %  \RenewDocumentCommand{\citem}{m m}{\item[\ChoiceLabel{##1}] ##2}%
+  %   \RenewDocumentCommand{\citem}{m m}{\item \ChoiceLabel{##1}\kern\ChoiceLabelSepInline ##2}%
+  }{%
+    % 縦（通常）
+    \begin{itemize}[
+      label={},
+      leftmargin=\ChoiceIndentNormal,
+      labelsep=\ChoiceLabelSepNormal,
+      itemsep=0.6mm,
+      partopsep=0pt,    % ★追加（段落直後の余白を殺す）
+      parsep=0pt,       % ★追加      
+      topsep=0.6mm
+    ]%
+    \DBGchoices{NORMAL (just after begin itemize)}%
+  }%
+}{%
+  \ifdefstring{\examChoiceType}{inline}{%
+    \end{itemize*}%
+    \end{minipage}%
+  }{%
+    \end{itemize}%
+  }%
+  \endgroup
+}
+
