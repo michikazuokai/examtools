@@ -448,7 +448,7 @@ if __name__ == "__main__":
         parts = re.split(r"[,\s]+", s)
         return {p for p in parts if p}
 
-    parser = argparse.ArgumentParser(description="試験問題.xlsx → 解答用JSON → 解答用紙PDF")
+    parser = argparse.ArgumentParser(description="試験問題.xlsm → 解答用JSON → 解答用紙PDF")
     parser.add_argument("subject", help="科目番号（=Excelシート名）")
     parser.add_argument("--version", default=None, help="出力するバージョン（A / B / A,B）。未指定なら全バージョン")
     args = parser.parse_args()
@@ -460,7 +460,7 @@ if __name__ == "__main__":
     curdir = Path(__file__).parent.parent
 
     # 試験用のエクセルファイル
-    examdata = "試験問題.xlsx"
+    examdata = "試験問題.xlsm"
     pt = curdir / "input" / examdata
     po = curdir / "work" / f"answers_{subject}.json"
 

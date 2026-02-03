@@ -1,0 +1,583 @@
+Option Explicit
+
+' ==========================================================
+'  設定・定数エリア
+' ==========================================================
+Private Const COL_TAG As Integer = 1    ' A列
+Private Const COL_VAL As Integer = 3    ' C列
+Private Const COMMENT_FILL_RGB As Long = 10092543 ' 薄い黄色 (整形時のみ使用)
+
+' ログファイル名
+Private Const LOG_SHEET_NAME As String = "log"
+Private Const ERROR_LOG_SHEET_NAME As String = "error_log" ' エラー詳細用シート
+
+' 構造体定義
+Private Type ValidationState
+    FormatOK As Boolean
+    CheckAnswerMode As Boolean
+    SeenQIDs As Collection
+    SeenOrderB As Collection
+    Stack As Collection
+    StackSeenTags As Collection
+    ErrorCount As Long
+End Type
+
+Private Type ActionItem
+    rowIndex As Long
+    LabelText As String
+End Type
+
+' ==========================================================
+'  1. マクロ実行用プロシージャ (ボタンに割り当ててください)
+' ==========================================================
+
+' 【ボタンA】 検査合格時のみ実行 (ログ確認型)
+Sub Run_ValidateAndFix()
+    ' 1. バリデーション実行
+    If PerformValidation() = True Then
+        ' エラーなし -> 実行確認
+        If MsgBox("バリデーション完了：問題はありませんでした。" & vbCrLf & _
+                  "「自動採番・整形処理」を実行しますか？", vbYesNo + vbQuestion, "確認") = vbYes Then
+            UpdateActiveSheet
+        End If
+    Else
+        ' エラーあり -> ログ確認を促す
+        MsgBox "バリデーションエラーが見つかりました。" & vbCrLf & _
+               "詳細は [ " & ERROR_LOG_SHEET_NAME & " ] シートを確認してください。" & vbCrLf & _
+               "（処理は中断されました）", vbCritical, "エラー検出"
+    End If
+End Sub
+
+' 【ボタンB】 いきなり実行 (作業中の仮採番用)
+Sub Run_ForceUpdate()
+    ' 警告なしで即座に実行処理を呼ぶ
+    UpdateActiveSheet
+End Sub
+
+
+' ==========================================================
+'  修正版 PerformValidation（配列を使用した得点集計版）
+' ==========================================================
+Private Function PerformValidation() As Boolean
+    Dim ws As Worksheet
+    Dim lastRow As Long, i As Long
+    Dim tag As String, val As Variant
+    Dim state As ValidationState
+    
+    ' --- 得点集計用変数 ---
+    Dim scores As Collection
+    Set scores = New Collection
+    Dim currentQID As String
+    Dim currentScore As Long
+    Dim totalScore As Long: totalScore = 0
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, COL_TAG).End(xlUp).Row
+    
+    ' 初期化
+    state.FormatOK = True
+    state.ErrorCount = 0
+    Set state.SeenQIDs = New Collection
+    Set state.Stack = New Collection
+    
+    ' ログ・エラーログのクリア
+    ClearLogSheets
+    
+    ' --- バリデーション & 得点集計ループ ---
+    For i = 1 To lastRow
+        tag = Trim(ws.Cells(i, COL_TAG).Value)
+        val = ws.Cells(i, COL_VAL).Value
+        
+        ' 得点集計ロジック (Pythonのtokutenlstと同等)
+        If tag = "b_question" Then
+            ' 前の問題をコレクションに保存 (配列として格納)
+            If currentQID <> "" Then
+                scores.Add Array(currentQID, currentScore)
+            End If
+            currentQID = CStr(val)
+            currentScore = 0
+        ElseIf tag = "answer" Or tag = "subanswer" Then
+            If IsNumeric(val) And val <> "" Then
+                currentScore = currentScore + CLng(val)
+                totalScore = totalScore + CLng(val)
+            End If
+        End If
+
+        ' --- ここに既存の構造バリデーション(check_structure等)があれば残す ---
+        ' ...
+        
+    Next i
+    
+    ' 最後の問題のスコアを保存
+    If currentQID <> "" Then
+        scores.Add Array(currentQID, currentScore)
+    End If
+
+    ' --- 結果出力 ---
+    If state.ErrorCount = 0 Then
+        ' 合格時のみLogシートに書き出し
+        WriteTokutenLog ws.Name, scores, totalScore
+        PerformValidation = True
+    Else
+        PerformValidation = False
+    End If
+End Function
+
+' --- ログシートをクリアする補助プログラム ---
+Private Sub ClearLogSheets()
+    Dim ws As Worksheet
+    On Error Resume Next
+    
+    ' ErrorLogシートがあれば内容をクリア
+    Set ws = ThisWorkbook.Sheets(ERROR_LOG_SHEET_NAME)
+    If Not ws Is Nothing Then
+        ws.Cells.Clear
+        ws.Range("A1:C1").Value = Array("行", "タグ", "エラー内容")
+    End If
+    
+    ' logシートは追記していく設計のため、ここではクリアしません。
+    ' もし毎回クリアしたい場合は、ここに logWs.Cells.Clear を追加してください。
+    
+    On Error GoTo 0
+End Sub
+
+' ==========================================================
+'  修正版 WriteTokutenLog（配列受け取り対応）
+' ==========================================================
+Private Sub WriteTokutenLog(sheetName As String, scores As Collection, total As Long)
+    Dim logWs As Worksheet
+    Dim nextRow As Long
+    Dim item As Variant ' 配列を受け取るためのVariant
+    Dim ts As String
+    
+    Set logWs = PrepareSheet(LOG_SHEET_NAME)
+    ts = Format(Now, "yyyy/mm/dd HH:mm:ss")
+    
+    ' ヘッダー作成
+    If logWs.Cells(1, 1).Value = "" Then
+        logWs.Range("A1:D1").Value = Array("日時", "対象シート", "問題番号", "問題の得点")
+    End If
+    
+    ' 各問題の得点を出力
+    For Each item In scores
+        nextRow = logWs.Cells(logWs.Rows.Count, 1).End(xlUp).Row + 1
+        logWs.Cells(nextRow, 1).Value = ts
+        logWs.Cells(nextRow, 2).Value = sheetName
+        logWs.Cells(nextRow, 3).Value = item(0) ' 配列の0番目(QID)
+        logWs.Cells(nextRow, 4).Value = item(1) ' 配列の1番目(Score)
+    Next item
+    
+    ' 合計行
+    nextRow = logWs.Cells(logWs.Rows.Count, 1).End(xlUp).Row + 1
+    logWs.Cells(nextRow, 1).Value = ts
+    logWs.Cells(nextRow, 2).Value = sheetName
+    logWs.Cells(nextRow, 3).Value = "合計"
+    logWs.Cells(nextRow, 4).Value = total
+    logWs.Range(logWs.Cells(nextRow, 1), logWs.Cells(nextRow, 4)).Font.Bold = True
+End Sub
+
+' --- シートを準備する補助関数 ---
+Private Function PrepareSheet(name As String) As Worksheet
+    Dim ws As Worksheet
+    On Error Resume Next
+    ' 指定した名前のシートがあるか確認
+    Set ws = ThisWorkbook.Sheets(name)
+    On Error GoTo 0
+    
+    ' なければ新しく作成する
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        ws.Name = name
+    End If
+    Set PrepareSheet = ws
+End Function
+
+' ==========================================================
+'  3. アップデートロジック (採番・整形)
+' ==========================================================
+Private Sub UpdateActiveSheet()
+    Dim ws As Worksheet
+    Set ws = ActiveSheet
+    Application.ScreenUpdating = False
+    
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    Dim data As Variant
+    If lastRow < 1 Then Exit Sub
+    data = ws.Range("A1:C" & lastRow).Value
+    
+    ' 変数
+    Dim qNum As Long: qNum = 0
+    Dim subIndex As Long: subIndex = 0
+    Dim totalPoints As Long: totalPoints = 0
+    Dim pageBreaks As Long: pageBreaks = 0
+    Dim qidUpdates As Long: qidUpdates = 0
+    Dim commentChangeCnt As Long: commentChangeCnt = 0
+    
+    Dim actions() As ActionItem
+    Dim actionCount As Long: actionCount = 0
+    Dim i As Long, tag As String, valC As Variant
+    Dim qid As String, currentQid As String
+    Dim examEndRow As Long
+    examEndRow = lastRow
+    
+    ' パス1: 集計と走査
+    For i = 1 To UBound(data, 1)
+        tag = Trim(CStr(data(i, 1)))
+        
+        If tag = "e_exam" Then
+            examEndRow = i
+            Exit For
+        End If
+        
+        If tag = "b_question" Then
+            qNum = qNum + 1
+            subIndex = 0
+            qid = "Q" & Format(qNum, "000")
+            currentQid = Trim(CStr(data(i, 3)))
+            
+            If currentQid <> qid Then
+                ws.Cells(i, 3).NumberFormat = "@"
+                ws.Cells(i, 3).Value = qid
+                qidUpdates = qidUpdates + 1
+            End If
+            
+            ReDim Preserve actions(actionCount)
+            actions(actionCount).rowIndex = i
+            actions(actionCount).LabelText = "# 【問題" & qNum & "】"
+            actionCount = actionCount + 1
+            
+        ElseIf tag = "b_subquest" Then
+            subIndex = subIndex + 1
+            ReDim Preserve actions(actionCount)
+            actions(actionCount).rowIndex = i
+            actions(actionCount).LabelText = "# 【問題" & qNum & "-" & subIndex & "】"
+            actionCount = actionCount + 1
+            
+        ElseIf tag = "answer" Or tag = "subanswer" Then
+            valC = data(i, 3)
+            If IsNumeric(valC) And Not IsEmpty(valC) Then totalPoints = totalPoints + CLng(valC)
+        ElseIf tag = "PAGEBREAK" Then
+            pageBreaks = pageBreaks + 1
+        End If
+    Next i
+    
+    ' パス2: コメント挿入
+    Dim act As ActionItem
+    Dim prevRow As Long, prevVal As String
+    Dim lineStr As String: lineStr = String(200, "-")
+    
+    For i = actionCount - 1 To 0 Step -1
+        act = actions(i)
+        
+        If act.rowIndex < examEndRow Then
+            prevRow = act.rowIndex - 1
+            Dim isUpdated As Boolean: isUpdated = False
+            
+            If prevRow >= 1 Then
+                prevVal = Trim(CStr(ws.Cells(prevRow, 1).Value))
+                If Left(prevVal, 5) = "# 【問題" Then
+                    If prevVal <> act.LabelText Then
+                        ws.Cells(prevRow, 1).Value = act.LabelText
+                        commentChangeCnt = commentChangeCnt + 1
+                    End If
+                    isUpdated = True
+                End If
+            End If
+            
+            If Not isUpdated Then
+                ws.Rows(act.rowIndex).Insert Shift:=xlDown
+                ws.Cells(act.rowIndex, 1).Value = act.LabelText
+                ws.Cells(act.rowIndex, 2).Value = lineStr
+                With ws.Range("A" & act.rowIndex & ":B" & act.rowIndex)
+                    .Interior.Color = COMMENT_FILL_RGB
+                    .Font.Bold = True
+                End With
+                ws.Cells(act.rowIndex, 2).NumberFormat = "@"
+                commentChangeCnt = commentChangeCnt + 1
+            End If
+        End If
+    Next i
+    
+    Application.ScreenUpdating = True
+    
+    ' 小問題数集計
+    Dim subQCount As Long
+    subQCount = GetTotalSubQuestions(actions)
+    
+    ' ログ出力
+    WriteToLogSheet ws.Name, qNum, subQCount, totalPoints, pageBreaks, commentChangeCnt, qidUpdates
+    
+    MsgBox "? 全処理が完了しました！" & vbCrLf & _
+           "・問題数: " & qNum & vbCrLf & _
+           "・得点合計: " & totalPoints & " 点" & vbCrLf & _
+           "詳細は [log] シートを確認してください。", vbInformation
+End Sub
+
+
+' ==========================================================
+'  4. ヘルパー関数群 (Mac対応：Collection使用)
+' ==========================================================
+
+' ヘルパー: コレクションにキーが存在するか確認
+Private Function ExistsInCollection(c As Collection, key As String) As Boolean
+    On Error Resume Next
+    c.Item key
+    ExistsInCollection = (Err.Number = 0)
+    On Error GoTo 0
+End Function
+
+Private Sub CheckStructure(ws As Worksheet, r As Long, tag As String, ByRef state As ValidationState)
+    Dim parent As String, expected As String
+    
+    ' 開始タグ
+    If Left(tag, 2) = "b_" Then
+        state.Stack.Add tag
+        state.StackSeenTags.Add New Collection
+        
+        ' 親がいる場合、親のスコープに自分を登録
+        If state.Stack.Count > 1 Then
+            Dim parentScope As Collection
+            Set parentScope = state.StackSeenTags(state.StackSeenTags.Count - 1)
+            If Not ExistsInCollection(parentScope, tag) Then
+                parentScope.Add True, tag
+            End If
+        End If
+        Exit Sub
+    End If
+    
+    ' 終了タグ
+    If Left(tag, 2) = "e_" Then
+        If state.Stack.Count = 0 Then
+            RecordError ws.Name, r, "開始タグがありません: " & tag, state.ErrorCount
+            Exit Sub
+        End If
+        parent = state.Stack(state.Stack.Count)
+        expected = "b_" & Mid(tag, 3)
+        If parent <> expected Then
+            RecordError ws.Name, r, "ブロック不整合: 現在の親 " & parent & " に対して閉じタグ " & tag, state.ErrorCount
+            Exit Sub
+        End If
+        CheckRequiredChildren ws, r, parent, state.StackSeenTags(state.Stack.Count), state.ErrorCount
+        state.Stack.Remove state.Stack.Count
+        state.StackSeenTags.Remove state.StackSeenTags.Count
+        Exit Sub
+    End If
+    
+    ' 中身タグ
+    If state.Stack.Count > 0 Then
+        parent = state.Stack(state.Stack.Count)
+        If Not IsAllowedChild(parent, tag) Then
+            RecordError ws.Name, r, "許可されていないタグです: " & parent & " の中に " & tag, state.ErrorCount
+        Else
+            Dim currentScope As Collection
+            Set currentScope = state.StackSeenTags(state.StackSeenTags.Count)
+            If Not ExistsInCollection(currentScope, tag) Then
+                currentScope.Add True, tag
+            End If
+        End If
+    ElseIf tag <> "b_exam" Then
+        RecordError ws.Name, r, "ブロック外に書かれているタグです: " & tag, state.ErrorCount
+    End If
+End Sub
+
+Private Sub CheckValuesV2(ws As Worksheet, r As Long, tag As String, ByRef state As ValidationState)
+    Dim vB As String, vC As String, vD As String
+    vB = Trim(CStr(ws.Cells(r, 2).Value))
+    vC = Trim(CStr(ws.Cells(r, 3).Value))
+    vD = Trim(CStr(ws.Cells(r, 4).Value))
+    
+    If tag = "b_exam" Then
+        If LCase(vC) <> "format=v2" Then RecordError ws.Name, r, "format=v2 必須 (C列)", state.ErrorCount
+    ElseIf tag = "PAGEBREAK" Then
+        RecordError ws.Name, r, "PAGEBREAK禁止 (v2では使用不可)", state.ErrorCount
+    ElseIf tag = "LINESPACE" Then
+        If Not IsInStack(state.Stack, "b_subgroup") Then RecordError ws.Name, r, "LINESPACEは b_subgroup 内のみ可", state.ErrorCount
+        If Not IsNumeric(vB) Then RecordError ws.Name, r, "LINESPACE B列は数値必須", state.ErrorCount
+    ElseIf tag = "b_question" Then
+        If vC = "" Then RecordError ws.Name, r, "QID必須 (C列)", state.ErrorCount
+        
+        If ExistsInCollection(state.SeenQIDs, vC) Then
+            RecordError ws.Name, r, "QID重複: " & vC, state.ErrorCount
+        Else
+            state.SeenQIDs.Add True, vC
+        End If
+        
+        If Not IsNumeric(vD) Then RecordError ws.Name, r, "orderB数値必須 (D列)", state.ErrorCount
+        
+        If ExistsInCollection(state.SeenOrderB, vD) Then
+            RecordError ws.Name, r, "orderB重複: " & vD, state.ErrorCount
+        Else
+            state.SeenOrderB.Add True, vD
+        End If
+        
+    ElseIf tag = "b_answer" Or tag = "b_subanswer" Then
+        state.CheckAnswerMode = (LCase(vB) = "#select")
+        If Not IsDifficulty(vC) Then RecordError ws.Name, r, "難易度不正 (LOW/MID/HIGH)", state.ErrorCount
+    ElseIf tag = "answer" Or tag = "subanswer" Then
+        If state.CheckAnswerMode And Not Is2Digits(vB) Then RecordError ws.Name, r, "解答形式不正 (#select時は数字)", state.ErrorCount
+        If Not IsNumeric(vC) Then RecordError ws.Name, r, "配点(整数)必須", state.ErrorCount
+        state.CheckAnswerMode = False
+    ElseIf tag = "examtitle" Or tag = "subject" Or tag = "fsyear" Then
+        If vB = "" Then RecordError ws.Name, r, "値必須 (B列)", state.ErrorCount
+    End If
+End Sub
+
+Private Sub CheckRequiredChildren(ws As Worksheet, r As Long, parent As String, seen As Collection, ByRef cnt As Long)
+    Dim req As Variant, i As Integer, mis As String
+    Select Case parent
+        Case "b_exam": req = Array("examtitle", "subject", "fsyear")
+        Case "b_question": req = Array("question")
+        Case "b_select": req = Array("select")
+        Case "b_subselect": req = Array("subselect")
+        Case "b_answer": req = Array("answer")
+        Case "b_subanswer": req = Array("subanswer")
+        Case Else: req = Array()
+    End Select
+    For i = LBound(req) To UBound(req)
+        If Not ExistsInCollection(seen, CStr(req(i))) Then mis = mis & req(i) & " "
+    Next i
+    If mis <> "" Then RecordError ws.Name, r, "必須タグ不足: " & mis, cnt
+End Sub
+
+Private Function IsAllowedChild(p As String, c As String) As Boolean
+    Dim a As String
+    Select Case p
+        Case "b_exam": a = "/examtitle/b_examnote/subject/fsyear/ansnote/anssize/b_question/qpattern/"
+        Case "b_examnote": a = "/examnote/"
+        Case "b_question": a = "/question/image/sline/b_multiline/b_select/b_code/b_subgroup/b_answer/"
+        Case "b_multiline": a = "/text/"
+        Case "b_select": a = "/select/"
+        Case "b_subselect": a = "/subselect/"
+        Case "b_code": a = "/code/"
+        Case "b_subcode": a = "/subcode/"
+        Case "b_subgroup": a = "/b_subquest/LINESPACE/"
+        Case "b_subquest": a = "/subquest/subimage/subsline/b_submultiline/b_subselect/b_subcode/b_subanswer/"
+        Case "b_submultiline": a = "/subtext/"
+        Case "b_answer": a = "/answer/"
+        Case "b_subanswer": a = "/subanswer/"
+    End Select
+    IsAllowedChild = (InStr(a, "/" & c & "/") > 0)
+End Function
+
+' ★修正ポイント：エラーをセル色ではなく「error_log」シートに書き込む関数に変更
+Private Sub RecordError(sheetName As String, rowIndex As Long, msg As String, ByRef cnt As Long)
+    Dim errWs As Worksheet
+    On Error Resume Next
+    Set errWs = ThisWorkbook.Sheets(ERROR_LOG_SHEET_NAME)
+    On Error GoTo 0
+    
+    ' シートがなければ作成
+    If errWs Is Nothing Then
+        Set errWs = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        errWs.Name = ERROR_LOG_SHEET_NAME
+        errWs.Range("A1:D1").Value = Array("日時", "対象シート", "行番号", "エラー内容")
+        errWs.Range("A1:D1").Font.Bold = True
+        errWs.Columns("A:D").ColumnWidth = 15
+        errWs.Columns("D").ColumnWidth = 50
+    End If
+    
+    Dim nr As Long
+    nr = errWs.Cells(errWs.Rows.Count, 1).End(xlUp).Row + 1
+    
+    errWs.Cells(nr, 1).Value = Now
+    errWs.Cells(nr, 1).NumberFormat = "yyyy-mm-dd hh:mm:ss"
+    errWs.Cells(nr, 2).Value = sheetName
+    errWs.Cells(nr, 3).Value = rowIndex
+    errWs.Cells(nr, 4).Value = msg
+    
+    cnt = cnt + 1
+End Sub
+
+Private Sub WriteToLogSheet(sn As String, q As Long, sq As Long, pts As Long, pb As Long, cmt As Long, qid As Long)
+    Dim lw As Worksheet
+    On Error Resume Next
+    Set lw = ThisWorkbook.Sheets(LOG_SHEET_NAME)
+    On Error GoTo 0
+    If lw Is Nothing Then
+        Set lw = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        lw.Name = LOG_SHEET_NAME
+        lw.Range("A1:H1").Value = Array("日時", "シート", "問題", "小問", "点数", "改P", "コメント", "QID")
+    End If
+    Dim nr As Long: nr = lw.Cells(lw.Rows.Count, 1).End(xlUp).Row + 1
+    lw.Cells(nr, 1).Value = Now: lw.Cells(nr, 1).NumberFormat = "yyyy-mm-dd hh:mm"
+    lw.Cells(nr, 2).Value = sn: lw.Cells(nr, 3).Value = q
+    lw.Cells(nr, 4).Value = sq: lw.Cells(nr, 5).Value = pts
+    lw.Cells(nr, 6).Value = pb: lw.Cells(nr, 7).Value = cmt
+    lw.Cells(nr, 8).Value = qid
+End Sub
+
+' ==========================================================
+'  汎用関数 (Mac対応: Regex不使用)
+' ==========================================================
+
+Private Function NormalizeTag(v As Variant) As String
+    If IsNull(v) Then
+        NormalizeTag = ""
+    Else
+        NormalizeTag = Trim(CStr(v))
+    End If
+End Function
+
+Private Function IsDifficulty(v As String) As Boolean
+    Dim s As String
+    s = UCase(v)
+    IsDifficulty = (s = "LOW" Or s = "MID" Or s = "HIGH")
+End Function
+
+Private Function IsInStack(c As Collection, t As String) As Boolean
+    Dim i As Variant
+    For Each i In c
+        If i = t Then
+            IsInStack = True
+            Exit Function
+        End If
+    Next
+    IsInStack = False
+End Function
+
+Private Function CollectionToString(c As Collection) As String
+    Dim s As String, i As Variant
+    For Each i In c
+        s = s & i & ">"
+    Next
+    CollectionToString = s
+End Function
+
+Private Function GetTotalSubQuestions(a() As ActionItem) As Long
+    Dim i As Long, c As Long
+    c = 0
+    On Error Resume Next
+    For i = 0 To UBound(a)
+        If InStr(a(i).LabelText, "-") > 0 Then
+            c = c + 1
+        End If
+    Next
+    GetTotalSubQuestions = c
+    On Error GoTo 0
+End Function
+
+' Mac対応版 Is2Digits (RegExp不使用)
+Private Function Is2Digits(v As String) As Boolean
+    Dim i As Long, c As String
+    Dim state As Integer
+    state = 0
+    
+    If Len(v) = 0 Then Is2Digits = False: Exit Function
+    
+    For i = 1 To Len(v)
+        c = Mid(v, i, 1)
+        If c >= "0" And c <= "9" Then
+            state = 1
+        ElseIf c = "," Then
+            If state = 0 Then Is2Digits = False: Exit Function
+            state = 0
+        Else
+            Is2Digits = False: Exit Function
+        End If
+    Next i
+    
+    If state = 0 Then Is2Digits = False: Exit Function
+    Is2Digits = True
+End Function
+

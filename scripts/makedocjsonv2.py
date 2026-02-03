@@ -534,7 +534,7 @@ if __name__ == "__main__":
     使い方:
       python makedocjsonv2.py <sheetname> [excel_filename]
     例:
-      python makedocjsonv2.py 2022001 試験問題.xlsx
+      python makedocjsonv2.py 2022001 試験問題.xlsm
     """
     if len(sys.argv) < 2:
         print("Usage: python makedocjsonv2.py <sheetname> [excel_filename]")
@@ -542,7 +542,7 @@ if __name__ == "__main__":
 
     curdir = Path(__file__).parent.parent
     sheetname = sys.argv[1]
-    examdata = "試験問題.xlsx" if len(sys.argv) < 3 else sys.argv[2]
+    examdata = "試験問題.xlsm" if len(sys.argv) < 3 else sys.argv[2]
     excel_path = curdir / "input" / examdata
 
     wb = openpyxl.load_workbook(excel_path)

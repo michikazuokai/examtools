@@ -76,28 +76,43 @@ def escape_tex_outside_inline_math(s: str) -> str:
 # \textbackslash 0 のように変換する（JSON段階で整形）
 _BACKSLASH_DIGIT_RE = re.compile(r"\\(?=\d)")
 
+# 追加：クォート内の \n \t \r \0 など（\ + 英数字）を対象にする
+_BACKSLASH_IN_QUOTES_RE = re.compile(r"(?<=[\'\"])\\(?=[A-Za-z0-9])")
+_RAW_TEX_RE = re.compile(r"\[\[(.+?)\]\]", re.DOTALL)
+
+def _conv_plain_segment(seg: str) -> str:
+    # safety: real NUL
+    seg = seg.replace("\x00", r"\textbackslash 0")
+    # '\n' や "\n" のようなクォート内の \n \t \r \0 など
+    seg = _BACKSLASH_IN_QUOTES_RE.sub(r"\\textbackslash ", seg)
+    # \0, \12 ...（バックスラッシュ + 数字）
+    seg = _BACKSLASH_DIGIT_RE.sub(r"\\textbackslash ", seg)
+    # 数式 \( ... \) の外側だけ { } & をエスケープ
+    seg = escape_tex_outside_inline_math(seg)
+    return seg
+
 def conv_text(v) -> str:
-    """
-    Convert textual cells for LaTeX-friendly backslash display.
-      - '\0', '\12' ... -> '\textbackslash 0', '\textbackslash 12'
-      - If a real NUL character (0x00) is present, treat it as '\0'
-    Notes:
-      - This is applied ONLY to plain-text fields (question text, choices text, notes, etc.)
-      - Do NOT apply to code blocks or file paths.
-    """
     if v is None:
         return ""
     s = str(v).strip()
     if s == "":
         return ""
-    # safety: real NUL (rare in Excel, but possible after processing)
-    s = s.replace("\x00", r"\textbackslash 0")
-    # backslash before digit(s)
-    s = _BACKSLASH_DIGIT_RE.sub(r"\\textbackslash ", s)
 
-    # ★追加：数式 \( ... \) の外側だけ { } & をエスケープ
-    s = escape_tex_outside_inline_math(s)
-    return s
+    out = []
+    last = 0
+    for m in _RAW_TEX_RE.finditer(s):
+        # 通常部分は変換
+        out.append(_conv_plain_segment(s[last:m.start()]))
+
+        # [[...]] の中は「そのまま」通す（[[ ]] 自体は剥がす）
+        out.append(f"[[{m.group(1)}]]")
+
+        last = m.end()
+
+    # 残り
+    out.append(_conv_plain_segment(s[last:]))
+
+    return "".join(out)
 
 
 def _parse_select_style(style_raw: str):
@@ -1078,7 +1093,7 @@ if __name__ == "__main__":
     使い方:
       python makedocjsonv2.py <sheetname> [excel_filename]
     例:
-      python makedocjsonv2.py 2022001 試験問題.xlsx
+      python makedocjsonv2.py 2022001 試験問題.xlsm
     """
     if len(sys.argv) < 2:
         print("Usage: python makedocjsonv2.py <sheetname> [excel_filename]")
@@ -1086,7 +1101,7 @@ if __name__ == "__main__":
 
     curdir = Path(__file__).parent.parent
     sheetname = sys.argv[1]
-    examdata = "試験問題.xlsx" if len(sys.argv) < 3 else sys.argv[2]
+    examdata = "試験問題.xlsm" if len(sys.argv) < 3 else sys.argv[2]
     excel_path = curdir / "input" / examdata
 
     wb = openpyxl.load_workbook(excel_path)

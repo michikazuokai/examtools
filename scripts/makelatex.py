@@ -33,11 +33,13 @@ from typing import Any, Dict, List, Optional
 import re
 from datetime import datetime
 
+_RAW_TEX_RE = re.compile(r"\[\[(.+?)\]\]", re.DOTALL)
+
 # =========================
 # Helpers
 # =========================
-
-def latex_escape(s: Any) -> str:
+def _latex_escape_core(s: Any) -> str:
+# def latex_escape(s: Any) -> str:
     """Escape LaTeX-special characters for plain text,
     BUT do NOT escape inside inline/display math: \( ... \), \[ ... \].
 
@@ -125,6 +127,24 @@ def latex_escape(s: Any) -> str:
 
     return "".join(out)
 
+def latex_escape(s: Any) -> str:
+    if s is None:
+        return ""
+    text = str(s)
+
+    out = []
+    last = 0
+    for m in _RAW_TEX_RE.finditer(text):
+        # 通常部分：従来通りエスケープ
+        out.append(_latex_escape_core(text[last:m.start()]))
+
+        # raw部分：[[...]] の中身は生LaTeX（エスケープしない、[[ ]] は剥がす）
+        out.append(m.group(1))
+
+        last = m.end()
+
+    out.append(_latex_escape_core(text[last:]))
+    return "".join(out)
 
 def latex_escape_multiline(s: Any) -> str:
     """

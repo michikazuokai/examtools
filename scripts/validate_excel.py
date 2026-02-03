@@ -326,8 +326,8 @@ def main():
     # 現在の場所
     curdir = Path(__file__).parent.parent
 
-    # 試験用のエクセルファイル デフォルトは "試験問題.xlsx"
-    examdata = "試験問題.xlsx" if len(sys.argv) < 3 else sys.argv[2]
+    # 試験用のエクセルファイル デフォルトは "試験問題.xlsm"
+    examdata = "試験問題.xlsm" if len(sys.argv) < 3 else sys.argv[2]
 
     excel_path = curdir / 'input' / examdata
     sheetname = sys.argv[1]  #シート名：科目番号

@@ -374,9 +374,7 @@ def validate_excelv2(path: str, shname="Sheet1"):
 
     return errors, tokutenlst(ws)
 
-from pathlib import Path
-import argparse
-import sys
+
 
 def main():
     # 1. パスの基準設定
@@ -390,8 +388,8 @@ def main():
     # シート名：位置引数（Positional Argument）として必須にする
     parser.add_argument("sheet", help="シート名 (例: 1020201)")
 
-    # --path：オプション引数（既定値：試験問題.xlsx）
-    parser.add_argument("--path", default="試験問題.xlsx", help="エクセルファイル名")
+    # --path：オプション引数（既定値：試験問題.xlsm）
+    parser.add_argument("--path", default="試験問題.xlsm", help="エクセルファイル名")
 
     args = parser.parse_args()
 
