@@ -13,30 +13,24 @@
 \newif\ifAfterMultiline
 \AfterMultilinefalse
 
-% ---- first-subquestion-question flag ----
-\newif\ifFirstSubQ
-\FirstSubQfalse
-
 % まずはこの値から（あとで微調整）
-\newlength{\MLtoChoiceTightNormal} \setlength{\MLtoChoiceTightNormal}{0mm}
-\newlength{\MLtoChoiceTightInline} \setlength{\MLtoChoiceTightInline}{0mm}
+\newlength{\MLtoChoiceTightNormal} \setlength{\MLtoChoiceTightNormal}{-7mm}
+\newlength{\MLtoChoiceTightInline} \setlength{\MLtoChoiceTightInline}{-8mm}
 
 
 % ---- layout lengths (override in styles.tex if you like) ----
 \newlength{\Qlabelw} \setlength{\Qlabelw}{5mm}
 \newlength{\Qsep}    \setlength{\Qsep}{1mm}
 \newlength{\QsepSub} \setlength{\QsepSub}{8mm} % ←小問だけ広げたい間隔（例）
-\newlength{\QBefore} \setlength{\QBefore}{5.0mm}
-%%%   \newlength{\QAfter}  \setlength{\QAfter}{1.5mm}
-\newlength{\QAfter}  \setlength{\QAfter}{0mm}
+\newlength{\QBefore} \setlength{\QBefore}{1.0mm}
+\newlength{\QAfter}  \setlength{\QAfter}{1.5mm}
 % choices の開始位置（右寄せ量）を小問だけ増やす
 \newlength{\ChoiceIndentMain} \setlength{\ChoiceIndentMain}{12mm} % ←大問 choices の開始位置（必要に応じて調整）
 \newlength{\ChoiceSubExtra} \setlength{\ChoiceSubExtra}{3mm} % 小問だけ、さらに右へ（好みで調整）
 
 \newlength{\SubIndent}      \setlength{\SubIndent}{10mm} % change later if needed
 \newlength{\SubBlockBefore} \setlength{\SubBlockBefore}{1.0mm}
-\newlength{\SubBlockAfter}  \setlength{\SubBlockAfter}{0.0mm}
-\newlength{\QBeforeSub}  \setlength{\QBeforeSub}{3mm} % ←小問→次の小問を詰めたいなら0mm
+\newlength{\SubBlockAfter}  \setlength{\SubBlockAfter}{1.0mm}
 % question本文の開始位置（番号＋隙間）
 \newlength{\QBodyIndent} \setlength{\QBodyIndent}{0pt}
 \newlength{\ChoiceIndentTmp} % choices 用の一時長さ（1回だけ定義）
@@ -154,45 +148,9 @@
   \setcounter{page}{1}%
 }
 
-% ---- first-question flag ----
-\newif\ifFirstQuestion
-\FirstQuestiontrue
-% subquestion境界での足し算防止（QBefore/QAfterを1回だけスキップ）
-\newif\ifSkipQBeforeOnce
-\SkipQBeforeOncefalse
-\newif\ifNextIsSubquestion
-\NextIsSubquestionfalse
-
 % ---- question env ----
 \NewDocumentEnvironment{question}{m}{%
-%%%  \par\vspace*{\QBefore}%
-%%%  \par\addvspace{\QBefore}%
-  \par
-  \ifFirstQuestion
-    \global\FirstQuestionfalse % 1問目は空けない
-    \else
-      % subquestion直後など「1回だけQBeforeを入れない」指示があればスキップ
-      \ifSkipQBeforeOnce
-        \global\SkipQBeforeOncefalse
-      \else
-        % ページ先頭（自動改ページ/強制改ページの直後）なら空けない
-        \ifdim\pagetotal=0pt
-          % 何もしない
-        \else
-          % ★ここだけ分岐：subquestion内は「最初だけ空けない」、2つ目以降はQBeforeSub
-          \ifInSubquestion
-            \ifFirstSubQ
-              \global\FirstSubQfalse % ←最初の小問は空けない
-              % 何もしない
-            \else
-              \addvspace{\QBeforeSub}% ←2つ目以降の小問間の空き
-            \fi
-          \else
-            \addvspace{\QBefore}%
-          \fi
-        \fi
-      \fi
-    \fi
+  \par\vspace*{\QBefore}%
   \ifInSubquestion
     \stepcounter{subno}%
     \edef\examLabelTmp{\theqno-\thesubno}%
@@ -203,39 +161,23 @@
     \edef\examLabelTmp{\theqno}%
     \def\examSepTmp{\Qsep}% ←大問は従来
   \fi
-  \noindent\leavevmode
+  \noindent
   \setlength{\QBodyIndent}{\dimexpr\Qlabelw+\examSepTmp\relax}%
-  \begingroup
-    \renewcommand{\arraystretch}{1.0}%
-    \begin{tabular}[t]{@{}l@{\hspace{\examSepTmp}}p{\dimexpr\linewidth-\Qlabelw-\examSepTmp\relax}@{}}
-      \makebox[\Qlabelw][l]{\textbf{\mbox{\examLabelTmp}}} & \strut\textbf{#1}\strut \\
-    \end{tabular}%
-  \endgroup
-  \par
-
-%%%%  \par\vspace*{\QAfter}%
-  % questionの直後にsubquestionが来る場合は、ここでは空けない（subquestion側に任せる）
-  \ifNextIsSubquestion
-    \global\NextIsSubquestionfalse
-  \else
-    \par\addvspace{\QAfter}%
-  \fi
+  \makebox[\Qlabelw][l]{\textbf{\examLabelTmp}}%
+  \hspace{\examSepTmp}%
+  \parbox[t]{\dimexpr\linewidth-\Qlabelw-\examSepTmp\relax}{\textbf{#1}}%
+  \par\vspace*{\QAfter}%
 }{%
   \global\AfterMultilinefalse % ★これを追加：次の問題へ持ち越さない
-%%%  \par\vspace{0.8\baselineskip}
-%%%  \par\addvspace{0.8\baselineskip}
-%%%  \par\addvspace{0pt} % Step1: まず余計な足し算を止める
-  \par % まずは段落だけ確定（addvspaceは入れない）
+  % \par\vspace{0.8\baselineskip}  % (disabled: avoid trailing blank page)
 }
 
 % ---- subquestion env ----
 \NewDocumentEnvironment{subquestion}{}{%
-  \global\NextIsSubquestiontrue
-  \par\addvspace{\SubBlockBefore}%
-  \global\SkipQBeforeOncetrue % ★追加：subquestion直後の最初の小問はQBeforeを入れない
+  \par\vspace*{\SubBlockBefore}%
   \begingroup
   \InSubquestiontrue
-%%%  \global\FirstSubQtrue
+%%  \begin{list}{}{\setlength{\leftmargin}{\SubIndent}\setlength{\rightmargin}{0pt}}
   \begin{list}{}{%
     \setlength{\leftmargin}{\SubIndent}%
     \setlength{\rightmargin}{0pt}%
@@ -250,10 +192,8 @@
   \InSubquestionfalse
   \endgroup
   \global\AfterMultilinefalse % ★追加：小問ブロックを跨いで誤爆しないようにする
-%%%  \par\vspace*{\SubBlockAfter}%
-  \par\addvspace{\SubBlockAfter}%
-  %%%  \global\SkipQBeforeOncetrue
-}%
+  % \par\vspace*{\SubBlockAfter}%  % (disabled: avoid trailing blank page)
+}
 
 % ---- sline ----
 \NewDocumentCommand{\sline}{O{} m}{%
@@ -276,7 +216,7 @@
 
 % ---- multiline ----
 \NewDocumentEnvironment{multiline}{O{}}{%
-  \pgfkeys{/exam, before=3, after=3, #1}%
+  \pgfkeys{/exam, before=0, after=0, #1}%
   \edef\MLBefore{\pgfkeysvalueof{/exam/before}}%
   \edef\MLAfter{\pgfkeysvalueof{/exam/after}}%
 
@@ -291,7 +231,6 @@
   \ifdim\MLBefore mm=0mm\else\vspace*{\MLBefore mm}\fi%
   \begingroup
   \setlength{\parindent}{0pt}%
-  \setlength{\parskip}{0pt}% ★追加
   \leftskip=\TextIndentTmp % ←複数行をまとめて右寄せ
 }{%
   \par % 段落を確定
@@ -375,8 +314,7 @@
   \begingroup
 
   % keys
-%%%  \pgfkeys{/exam/.cd, type=normal, sep=8, vspace=3mm, #1}%
-  \pgfkeys{/exam/.cd, type=normal, sep=8, vspace=1mm, #1}%
+  \pgfkeys{/exam/.cd, type=normal, sep=8, vspace=3mm, #1}%
   \edef\examChoiceType{\pgfkeysvalueof{/exam/type}}%
   \edef\examChoiceSep{\pgfkeysvalueof{/exam/sep}}%
   \edef\examChoiceVspace{\pgfkeysvalueof{/exam/vspace}}%
@@ -425,40 +363,44 @@
   \typeout{[choices] type=\examChoiceType, sep=\examChoiceSep, vspace=\examChoiceVspace}%
 
   % ---- inline / normal ----
-% ---- inline / normal ----
-\ifdefstring{\examChoiceType}{inline}{%
-  \par\addvspace{0pt}% 段落確定（重なり防止）
-  \noindent
-  \hspace*{\ChoiceIndentInline}%
-  \begin{minipage}[t]{\dimexpr\linewidth-\ChoiceIndentInline\relax}
-  \vspace*{0pt}% ★重要：-\topskip を使わない（重なり防止）
+  \ifdefstring{\examChoiceType}{inline}{%
+    % ★ inline は minipage を右にずらして「箱ごと」インデント（確実）
+    % \par\noindent
+    \noindent % ←★ここを \par\noindent から \noindent に
+    \hspace*{\ChoiceIndentInline}%
+    \begin{minipage}[t]{\dimexpr\linewidth-\ChoiceIndentInline\relax}
 
-  \begin{itemize*}[
-    label={},
-    leftmargin=0pt,
-    afterlabel=\hspace*{\ChoiceLabelSepInline},
-    topsep=0pt,
-    partopsep=0pt,
-    parsep=0pt,
-    itemjoin=\hspace*{\examChoiceSep mm},
-    itemjoin*=\hspace*{\examChoiceSep mm},
-    before=\vspace{0mm},
-    after=\vspace{0mm}
-  ]%
-  \DBGchoices{INLINE (just after begin itemize*)}%
-}{%
-  % 縦（通常）
-  \begin{itemize}[
-    label={},
-    leftmargin=\ChoiceIndentNormal,
-    labelsep=\ChoiceLabelSepNormal,
-    itemsep=0mm,
-    partopsep=0pt,
-    parsep=0pt,
-    topsep=0mm
-  ]%
-  \DBGchoices{NORMAL (just after begin itemize)}%
-}%
+    \begin{itemize*}[
+      label={},
+      leftmargin=0pt,
+    %  labelsep=\ChoiceLabelSepInline, % ★追加：ラベルと本文の間隔
+      afterlabel=\hspace*{\ChoiceLabelSepInline}, % ★ここが効く
+      topsep=0pt,       % ★追加
+      partopsep=0pt,    % ★追加（段落直後の余白を殺す）
+      parsep=0pt,       % ★追加
+      itemjoin=\hspace*{\examChoiceSep mm},
+      itemjoin*=\hspace*{\examChoiceSep mm},
+      before=\vspace{0mm},
+      after=\vspace{0mm}
+    ]%
+    \DBGchoices{INLINE (just after begin itemize*)}%
+  %  \RenewDocumentCommand{\citem}{m m}{\item \ChoiceLabel{##1}\ ##2}%
+  %   \RenewDocumentCommand{\citem}{m m}{\item \ChoiceLabel{##1}\hspace{\ChoiceLabelSepInline}##2}%
+  %  \RenewDocumentCommand{\citem}{m m}{\item[\ChoiceLabel{##1}] ##2}%
+  %   \RenewDocumentCommand{\citem}{m m}{\item \ChoiceLabel{##1}\kern\ChoiceLabelSepInline ##2}%
+  }{%
+    % 縦（通常）
+    \begin{itemize}[
+      label={},
+      leftmargin=\ChoiceIndentNormal,
+      labelsep=\ChoiceLabelSepNormal,
+      itemsep=0.6mm,
+      partopsep=0pt,    % ★追加（段落直後の余白を殺す）
+      parsep=0pt,       % ★追加      
+      topsep=0.6mm
+    ]%
+    \DBGchoices{NORMAL (just after begin itemize)}%
+  }%
 }{%
   \ifdefstring{\examChoiceType}{inline}{%
     \end{itemize*}%
@@ -468,5 +410,4 @@
   }%
   \endgroup
 }
-
 

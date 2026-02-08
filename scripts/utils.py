@@ -74,7 +74,7 @@ def jsonmetainfo(workdir, jsonfile):
     return (None, None, None)
 
 def setspace(text, p1):
-    defaults = {"ANSSIZE": (50.0, 60.0), "SPACEB_A": (0.0, 10.0), "ANSWH": (1.0, 1.0)}
+    defaults = {"ANSSIZE": (50.0, 60.0), "SPACEB_A": (0.0, 0.0), "ANSWH": (1.0, 1.0)}
     DEFAULTb, DEFAULTa = defaults.get(p1, (0.0, 0.0))
 
     def parse_num(val, default):

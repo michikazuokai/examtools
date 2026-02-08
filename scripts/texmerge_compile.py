@@ -182,7 +182,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sheet", help="sheet name (subject id), e.g. 1020201")
     ap.add_argument("--version", default=None, help="compile only one version, e.g. A or B")
-    ap.add_argument("--runs", type=int, default=1, help="lualatex runs (default=1)")
+    ap.add_argument("--runs", type=int, default=2, help="lualatex runs (default=1)")
     args = ap.parse_args()
 
     root = project_root()

@@ -638,13 +638,28 @@ def excel_to_json_v2(ws, version="A"):
 
         elif tag == "b_subquest":
             sub_number += 1
+
+            # v2列（b_question と同じ配置を小問でも使用）
+            # C=qid, D=orderB(未使用), E=PB_A_after, F=LS_A_after, G=PB_B_after, H=LS_B_after
+            pb_a = row[4] if len(row) >= 5 else None
+            ls_a = row[5] if len(row) >= 6 else None
+            pb_b = row[6] if len(row) >= 7 else None
+            ls_b = row[7] if len(row) >= 8 else None
+
+            # versionに応じて after を選択
+            pb_after = _is_one(pb_a) if version == "A" else _is_one(pb_b)
+            ls_after = _to_float_or_none(ls_a if version == "A" else ls_b)
+
             current_sub = {
                 "number": str(sub_number),
                 "question": None,
                 "content": [],
+                "_pb_after": pb_after,
+                "_ls_after": ls_after,
                 "tag": tag,
                 "src": make_src(row_i),
             }
+
 
         elif tag == "subquest" and current_sub is not None:
             current_sub["question"] = conv_text(params[0])
@@ -861,9 +876,31 @@ def excel_to_json_v2(ws, version="A"):
 
         # 小問終了
         elif tag == "e_subquest":
+            # 小問を閉じる
             current_sub["src"]["row_end"] = row_i
+
+            pb_after = current_sub.pop("_pb_after", False)
+            ls_after = current_sub.pop("_ls_after", None)
+            sub_src = current_sub.get("src")
+
             current_subgroup["subquestions"].append(current_sub)
             current_sub = None
+
+            # v2: 小問 after（subquestions 配列に挿入）
+            if ls_after is not None:
+                current_subgroup["subquestions"].append({
+                    "type": "vspace",
+                    "value_mm": int(ls_after) if isinstance(ls_after, int) else int(round(ls_after)),
+                    "tag": "LS_sub_after",
+                    "src": sub_src if isinstance(sub_src, dict) else {"sheet": sheetname, "row": "?"},
+                })
+            if pb_after:
+                current_subgroup["subquestions"].append({
+                    "type": "pagebreak",
+                    "tag": "PB_sub_after",
+                    "src": sub_src if isinstance(sub_src, dict) else {"sheet": sheetname, "row": "?"},
+                })
+
 
         # subgroup 終了 → 大問へ合流
         elif tag == "e_subgroup":
@@ -881,7 +918,7 @@ def excel_to_json_v2(ws, version="A"):
                 raise ValueError("LINESPACE の値が空です（v2では数値必須）")
             vspace = {
                 "type": "vspace",
-                "value": v,
+                "value_mm": int(v) if isinstance(v, int) else int(round(v)),
                 "tag": tag,
                 "src": make_src(row_i),
             }
@@ -948,7 +985,7 @@ def excel_to_json_v2(ws, version="A"):
         if ls_after is not None:
             results.append({
                 "type": "vspace",
-                "value": ls_after,
+                "value_mm": int(ls_after) if isinstance(ls_after, int) else int(round(ls_after)),
                 "tag": "LS_after",
                 "src": q_src if isinstance(q_src, dict) else {"sheet": sheetname, "row": "?"},
             })

@@ -412,6 +412,26 @@ def _q_loc(q: Dict[str, Any]) -> str:
     return _src_loc(q.get("src"))
 
 
+_TRAILING_DROP = re.compile(
+    r'^\s*(\\newpage|\\clearpage|\\pagebreak(\[[^\]]*\])?|\\vspace\*?\{[^}]*\})\s*$'
+)
+def trim_trailing_page_controls(lines: list[str]) -> None:
+    """
+    out の末尾に残った改ページ/余白だけを削除して、
+    最終ページの空白PDFページを防ぐ。
+    """
+    while lines:
+        s = lines[-1].strip()
+        # 空行・コメントは落とす
+        if s == "" or s.startswith("%"):
+            lines.pop()
+            continue
+        # 改ページ/余白系は落とす
+        if _TRAILING_DROP.match(s):
+            lines.pop()
+            continue
+        break
+
 def generate_version_tex(data: Dict[str, Any], version: str = "A", include_cover: bool = False, with_trace: bool = True) -> str:
     versions = data.get("versions", []) or []
     v = next((x for x in versions if x.get("version") == version), None)
@@ -496,16 +516,32 @@ def generate_version_tex(data: Dict[str, Any], version: str = "A", include_cover
         if isinstance(subs, list) and subs:
             if with_trace:
                 out.append(f"%% SUBBEGIN parent_qid={q.get('qid','')} src={_q_loc(q)}")
-            out.append(r"\begin{subquestion}")
+
+            sub_open = False
+            def open_sub() -> None:
+                nonlocal sub_open
+                if not sub_open:
+                    out.append(r"\begin{subquestion}")
+                    sub_open = True
+
+            def close_sub() -> None:
+                nonlocal sub_open
+                if sub_open:
+                    out.append(r"\end{subquestion}")
+                    sub_open = False
+
             for sq in subs:
                 if not isinstance(sq, dict):
                     continue
 
                 # allow controls in subquestions list
                 if sq.get("type") == "vspace":
+                    open_sub()
                     out.append(render_vspace(sq, with_trace=with_trace))
                     continue
                 if sq.get("type") == "pagebreak":
+                    # IMPORTANT: avoid \newpage inside list env
+                    close_sub()
                     out.append(render_pagebreak(sq, with_trace=with_trace))
                     continue
 
@@ -513,6 +549,7 @@ def generate_version_tex(data: Dict[str, Any], version: str = "A", include_cover
                 if not sq_q:
                     continue
 
+                open_sub()
                 if with_trace:
                     out.append(f"%% SQBEGIN tag={sq.get('tag','?')} src={_src_loc(sq.get('src'))}")
 
@@ -523,7 +560,7 @@ def generate_version_tex(data: Dict[str, Any], version: str = "A", include_cover
                 if with_trace:
                     out.append("%% SQEND")
 
-            out.append(r"\end{subquestion}")
+            close_sub()
             if with_trace:
                 out.append("%% SUBEND")
 
@@ -535,6 +572,8 @@ def generate_version_tex(data: Dict[str, Any], version: str = "A", include_cover
 
         out.append("")
 
+    # ★ここで末尾の pagebreak/vspace を削除（空白最終ページ対策）
+    trim_trailing_page_controls(out)
     return "\n\n".join(out).strip() + "\n"
 
 def project_root() -> Path:
