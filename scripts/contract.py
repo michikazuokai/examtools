@@ -56,6 +56,12 @@ CONTRACT: Dict[str, TypeSpec] = {
     # Multiline (free-form multiple lines)
     "multiline": TypeSpec(required=("type", "values"), optional=("class",)),
 
+    # Premise block（前提条件）
+    "premise": TypeSpec(required=("type", "content",), optional=("title",)),
+
+    # Premise text lines
+    "preline": TypeSpec(required=("type", "values",), optional=()),
+
     # Image block
     "image": TypeSpec(required=("type", "path"), optional=("width", "caption", "subimages")),
 
@@ -275,6 +281,20 @@ def validate_element(elem: Dict[str, Any], strict: bool = False, warn_unknown_ke
             bad = [i for i, s in enumerate(values) if not isinstance(s, str)]
             if bad:
                 problems.append(Problem("ERROR", loc, f"multiline: values[{bad[0]}] is not string"))
+
+    if etype == "preline":
+        values = elem.get("values")
+        if not _is_non_empty_list(values):
+            problems.append(Problem("ERROR", loc, "preline: values must be non-empty list"))
+        else:
+            bad = [i for i, s in enumerate(values) if not isinstance(s, str)]
+            if bad:
+                problems.append(Problem("ERROR", loc, f"preline: values[{bad[0]}] is not string"))
+
+    if etype == "premise":
+        content = elem.get("content")
+        if not isinstance(content, list):
+            problems.append(Problem("ERROR", loc, "premise: content must be list"))
 
     if etype == "image":
         path = elem.get("path")

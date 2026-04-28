@@ -125,7 +125,7 @@ def copy_templates_to(build_dir: Path) -> None:
         shutil.copy2(src, build_dir / name)
 
 
-def inject_graphicspath(build_dir: Path, sheet: str) -> None:
+def _inject_graphicspath(build_dir: Path, sheet: str) -> None:
     """
     preamble.tex に \graphicspath を注入する。
     - preamble.tex に @@GRAPHICSPATH@@ があれば置換
@@ -154,6 +154,32 @@ def inject_graphicspath(build_dir: Path, sheet: str) -> None:
 
     write_text(preamble_path, preamble)
 
+def inject_graphicspath(build_dir: Path, sheet: str) -> None:
+    """
+    preamble.tex に \\graphicspath を注入する。
+    今回の出力構造:
+      exam_dir/
+        images/
+        pdf/
+          A/
+    なので、pdf/A から images へは ../../images/
+    """
+    preamble_path = build_dir / "preamble.tex"
+    if not preamble_path.exists():
+        raise FileNotFoundError(f"preamble.tex not found in build_dir: {preamble_path}")
+
+    gsp = r"\graphicspath{{../../images/}}" + "\n"
+
+    preamble = read_text(preamble_path)
+
+    if "@@GRAPHICSPATH@@" in preamble:
+        preamble = preamble.replace("@@GRAPHICSPATH@@", gsp)
+    else:
+        # すでに graphicspath がある場合は二重追加しない
+        if r"\graphicspath" not in preamble:
+            preamble += "\n% --- auto inserted graphicspath ---\n" + gsp
+
+    write_text(preamble_path, preamble)
 
 def build_full_tex(build_dir: Path, body_tex_filename: str, out_tex_filename: str) -> Path:
     """
@@ -221,7 +247,7 @@ def _main():
 
         # テンプレコピー
         copy_templates_to(out_dir)
-
+        # 画像パスは templates/latex/preamble.tex 側で指定する
         # graphicspath 注入
         inject_graphicspath(out_dir, sheet)
 
@@ -279,6 +305,7 @@ def main():
 
         copy_templates_to(out_dir)
 
+        # 画像パスは templates/latex/preamble.tex 側で指定する
         inject_graphicspath(out_dir, sheet)
 
         body_name = f"{sheet}_{ver}_body.tex"

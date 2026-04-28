@@ -311,6 +311,43 @@
   \end{center}
 }
 
+% ============================================================
+% Premise block
+%  \begin{premisebox}
+%    ...
+%  \end{premisebox}
+% - Used for common preconditions before questions
+% ============================================================
+\newenvironment{premisebox}{%
+  \par
+  \Needspace{10\baselineskip}
+  % ページ先頭でなければ、前に2行分の余白を入れる
+  \ifdim\pagetotal<2\baselineskip
+    % ページ先頭に近い場合は余白を入れない
+  \else
+    \vspace{2\baselineskip}
+  \fi
+  \hspace*{5mm}\textbf{【前提条件】}\par
+  \vspace{1mm}
+  \begin{tcolorbox}[
+    enhanced,
+    left skip=7mm,
+    width=\dimexpr\linewidth-7mm\relax,
+    colback=white,
+    colframe=black,
+    boxrule=0.6pt,
+    arc=1mm,
+    left=2mm,
+    right=2mm,
+    top=1mm,
+    bottom=1mm,
+    before skip=0mm,
+    after skip=1\baselineskip
+  ]
+}{%
+  \end{tcolorbox}
+}
+
 % % ---- code ----
 % % IMPORTANT: listings is a verbatim-like environment.
 % % Do NOT wrap \begin{lstlisting} inside \NewDocumentEnvironment; it causes

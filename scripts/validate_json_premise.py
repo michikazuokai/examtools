@@ -142,6 +142,17 @@ CONTRACT: Dict[str, Dict[str, Any]] = {
         "optional": {"createdatetime", "verno", "inputpath", "sheetname"},
         "enums": {},
     },
+    "premise": {
+        "required": {"content"},
+        "optional": {"title"},
+        "enums": {},
+    },
+
+    "preline": {
+        "required": {"values"},
+        "optional": {},
+        "enums": {},
+    },
 }
 
 # If you use nested question objects as elements, you can add a contract here.
@@ -280,6 +291,16 @@ def validate_type_contract(elem: Dict[str, Any], strict: bool, warn_unknown_keys
         v = elem.get("values")
         if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
             issues.append(Issue("ERROR", "multiline: values must be list[str]", loc))
+            
+    if t == "preline":
+        v = elem.get("values")
+        if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+            issues.append(Issue("ERROR", "preline: values must be list[str]", loc))
+
+    if t == "premise":
+        content = elem.get("content")
+        if not isinstance(content, list):
+            issues.append(Issue("ERROR", "premise: content must be list", loc))
 
     if t == "code":
         lines = elem.get("lines")

@@ -11,7 +11,8 @@
 \usepackage{etoolbox} % \ifstrequal
 %\usepackage{paralist}
 \usepackage{xstring}
-%\usepackage[most]{tcolorbox}
+\usepackage{needspace}
+\usepackage[most]{tcolorbox}
 \usepackage{tikz}
 \usetikzlibrary{calc}
 % pgfkeys (used by macros.tex)
@@ -30,6 +31,9 @@
   numbersep=8pt
 }
 
+% 画像パスは texmerge_compile_premise.py が自動挿入する
+@@GRAPHICSPATH@@
+
 % ---- Japanese (LuaLaTeX) ----
 \usepackage{luatexja}
 \usepackage{luatexja-fontspec}
@@ -45,7 +49,7 @@
 \usepackage{luatexja-ruby}
 
 % 画像パス（ここはプレースホルダにするのが安全）
-@@GRAPHICSPATH@@
+% @@GRAPHICSPATH@@
 
 \usepackage[
   left=27.68mm,
