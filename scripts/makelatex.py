@@ -291,6 +291,53 @@ def render_multiline(item: Dict[str, Any], with_trace: bool = True) -> str:
     out.append(r"\end{multiline}")
     return "\n".join(out)
 
+def render_preline(item: Dict[str, Any], with_trace: bool = True) -> str:
+    vals = item.get("values") or []
+    if not isinstance(vals, list):
+        vals = []
+
+    out: List[str] = []
+
+    if with_trace:
+        out.append(_trace_line(item))
+
+    for v in vals:
+        out.append(latex_escape(v) + r"\\")
+
+    return "\n".join(out)
+
+def render_premise(item: Dict[str, Any], with_trace: bool = True) -> str:
+    content = item.get("content") or []
+    if not isinstance(content, list):
+        content = []
+
+    out: List[str] = []
+
+    if with_trace:
+        out.append(_trace_line(item))
+
+    out.append(r"\begin{premisebox}")
+
+    for child in content:
+        if not isinstance(child, dict):
+            continue
+
+        t = child.get("type")
+
+        if t == "preline":
+            out.append(render_preline(child, with_trace=with_trace))
+
+        elif t == "image":
+            out.append(render_image(child, with_trace=with_trace))
+
+        else:
+            if with_trace:
+                out.append(_trace_line(child))
+            out.append(rf"% [WARN] unknown premise content type: {latex_escape(t)}")
+
+    out.append(r"\end{premisebox}")
+
+    return "\n\n".join(out)
 
 def render_choices(item: Dict[str, Any], with_trace: bool = True) -> str:
     style = item.get("style", "normal")
@@ -494,6 +541,12 @@ def generate_version_tex(data: Dict[str, Any], version: str = "A", include_cover
             continue
         if qtype == "vspace":
             out.append(render_vspace(q, with_trace=with_trace))
+            out.append("")
+            continue
+
+        # premise block
+        if qtype == "premise":
+            out.append(render_premise(q, with_trace=with_trace))
             out.append("")
             continue
 

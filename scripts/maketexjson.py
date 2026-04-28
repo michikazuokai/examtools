@@ -16,7 +16,8 @@ from contract import normalize_document, validate_document, ContractError
 
 # v2: qpattern は b_exam ブロックの qpattern 行から取得（v1同様）
 qpattern = None
-
+current_premise = None
+current_preline = None
 def escape_tex_outside_inline_math(s: str) -> str:
     r"""
     \(...\) / \[...\] の中はそのまま、
@@ -309,6 +310,8 @@ def excel_to_json_v2(ws, version="A"):
     current_exam = None
     current_multiline = None
     current_subgroup = None
+    current_premise = None
+    current_preline = None
 
     q_number = 0
     sub_number = 0
@@ -941,6 +944,49 @@ def excel_to_json_v2(ws, version="A"):
                     current_q.pop("subquestions")
                 questions_raw.append(current_q)
             current_q = None
+        #----------------------------
+        # 前提条件の処理
+        #----------------------------
+        elif tag == "b_premise":
+            current_premise = {
+                "type": "premise",
+                "title": "前提条件",
+                "content": [],
+                "tag": tag,
+                "src": make_src(row_i),
+            }
+
+        elif tag == "b_preline" and current_premise is not None:
+            current_preline = {
+                "type": "preline",
+                "values": [],
+                "tag": tag,
+                "src": make_src(row_i),
+            }
+
+        elif tag == "pretext" and current_preline is not None:
+            current_preline["values"].append(conv_text(params[0]))
+
+        elif tag == "e_preline" and current_preline is not None:
+            current_preline["src"]["row_end"] = row_i
+            current_premise["content"].append(current_preline)
+            current_preline = None
+
+        elif tag == "preimage" and current_premise is not None:
+            wimg = parse_with_number(params[0], 0.85)
+            current_premise["content"].append({
+                "type": "image",
+                "path": wimg[0],
+                "width": wimg[1],
+                "tag": tag,
+                "src": make_src(row_i),
+            })
+
+        elif tag == "e_premise" and current_premise is not None:
+            current_premise["src"]["row_end"] = row_i
+            questions_raw.append(current_premise)
+            current_premise = None
+
 
         # その他タグは v1同様に無視/拡張余地
         else:
@@ -953,7 +999,18 @@ def excel_to_json_v2(ws, version="A"):
     # version別の並び替えと、PB/LS after の挿入
     # -------------------------
     # v2: qid の重複チェック（重複は不可）
-    qids = [q.get("qid") for q in questions_raw]
+    # qids = [q.get("qid") for q in questions_raw]
+    # if len(set(qids)) != len(qids):
+    #     dup = sorted([x for x in set(qids) if qids.count(x) > 1])
+    #     raise ValueError(f"qid が重複しています: {dup}")
+
+    # v2: qid の重複チェック（大問のみ対象。premise など qid を持たない要素は除外）
+    qids = [
+        q.get("qid")
+        for q in questions_raw
+        if q.get("qid") is not None
+    ]
+
     if len(set(qids)) != len(qids):
         dup = sorted([x for x in set(qids) if qids.count(x) > 1])
         raise ValueError(f"qid が重複しています: {dup}")
@@ -964,14 +1021,27 @@ def excel_to_json_v2(ws, version="A"):
         questions = questions_raw
 
     # v2: 問番号を振り直す（B版は必須。A版も再付番して整合させる）
-    for i, q in enumerate(questions, start=1):
-        q["number"] = str(i)
+#    for i, q in enumerate(questions, start=1):
+#        q["number"] = str(i)
+
+    qno = 1
+    for q in questions:
+        if q.get("type") == "premise":
+            continue
+
+        q["number"] = str(qno)
+        qno += 1
+
 
     results = []
     if cover is not None:
         results.append(cover)
 
     for q in questions:
+        if q.get("type") == "premise":
+            results.append(q)
+            continue
+
         pb_after = q.pop("_pb_after", False)
         ls_after = q.pop("_ls_after", None)
         q.pop("_orderB", None)  # JSONに残さない
@@ -1000,7 +1070,7 @@ def excel_to_json_v2(ws, version="A"):
 
 
 def run_json_validator(json_path: Path, strict: bool = False) -> None:
-    validator = Path(__file__).resolve().parent / "validate_json.py"
+    validator = Path(__file__).resolve().parent / "validate_json_premise.py"
     cmd = [sys.executable, str(validator), str(json_path), "--warn-unknown-keys"]
     if strict:
         cmd.append("--strict")

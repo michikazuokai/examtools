@@ -10,8 +10,12 @@ from utils import get_exam_path
 # ----------------------------
 ALLOWED_CHILDREN = {
     "b_exam": {"examtitle", "b_examnote", "subject", "fsyear", "ansnote", "anssize",
-               "b_question", "qpattern"},
+               "b_question", "qpattern",
+               "b_premise"   # ★ 追加
+               },
     "b_examnote": {"examnote"},
+    "b_premise": {"b_preline", "preimage"},   # ★ 追加
+    "b_preline": {"pretext"},                 # ★ 追加
     "b_question": {"question", "image", "sline", "b_multiline", 
                    "b_select", "b_code", "b_subgroup",
                    "b_answer"   # ★ 追加
@@ -37,6 +41,8 @@ ALLOWED_CHILDREN = {
 CLOSING_TAGS = {
     "b_exam": "e_exam",
     "b_examnote": "e_examnote",   # ← これを追加
+    "b_premise": "e_premise",   # ★ 追加
+    "b_preline": "e_preline",   # ★ 追加
     "b_question": "e_question",
     "b_subgroup": "e_subgroup",
     "b_subquest": "e_subquest",
@@ -55,6 +61,7 @@ CLOSING_TAGS = {
 # ----------------------------
 REQUIRED_CHILDREN = {
     "b_exam": {"examtitle", "subject", "qpattern"},
+    "b_preline": {"pretext"},     # ★ 追加
     "b_question": {"question", },
     "b_subquest": {"subquest"},
 }
@@ -97,6 +104,12 @@ VALIDATION_RULES = {
              "validate": lambda val: re.match(r'^.+\.png(\[\d+(\.\d+)?\])?$', val)
          }
      },
+    "preimage": {   # ★ 追加
+        1: {
+            "required": True,
+            "validate": lambda val: re.match(r'^.+\.png(\[\d+(\.\d+)?\])?$', val)
+        }
+    },
      "answer": {
          1: {"required": True},
          2: {"required": True,"validate": is_integer}
@@ -236,6 +249,11 @@ def tokutenlst(ws):
         ten = ws.cell(row=i, column=3).value   # 得点
 
         if code is None:
+            i += 1
+            continue
+
+        # ★ ここに追加
+        if str(code).strip().startswith("# 【前提条件】"):
             i += 1
             continue
 
