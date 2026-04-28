@@ -1,6 +1,9 @@
 import argparse
 import openpyxl
 import re
+from pathlib import Path
+import sys
+from utils import get_exam_path
 
 # ----------------------------
 # 子タグルール定義
@@ -322,7 +325,7 @@ def validate_excel(path: str, shname="Sheet1") -> list[str]:
 
 from pathlib import Path
 import sys
-def main():
+def _main():
     # 現在の場所
     curdir = Path(__file__).parent.parent
 
@@ -344,6 +347,44 @@ def main():
             print(v)
         sys.exit(0) 
 
+def main():
+    """
+    使い方:
+      python validate_excel.py <subject_no> [year] [sheetname]
 
+    例:
+      python validate_excel.py 1020701
+      python validate_excel.py 1020701 2026
+      python validate_excel.py 1020701 2026 1020701A
+    """
+
+    if len(sys.argv) < 2:
+        print("Usage: python validate_excel.py <subject_no> [year] [sheetname]")
+        sys.exit(1)
+
+    subject_no = sys.argv[1]
+    target_year = sys.argv[2] if len(sys.argv) >= 3 else "2026"
+    sheetname = sys.argv[3] if len(sys.argv) >= 4 else subject_no
+
+    excel_path, work_dir, exam_koma_no, sub_folder = get_exam_path(subject_no, target_year)
+
+    print(f"科目番号: {subject_no}")
+    print(f"年度: {target_year}")
+    print(f"シート名: {sheetname}")
+    print(f"試験コマ番号: {exam_koma_no}")
+    print(f"入力Excel: {excel_path}")
+
+    errs, toklst = validate_excel(excel_path, sheetname)
+
+    if errs:
+        print("Validation errors:")
+        for e in errs:
+            print(" -", e)
+        sys.exit(1)
+    else:
+        print("Validation OK!")
+        for v in toklst:
+            print(v)
+        sys.exit(0)
 if __name__ == "__main__":
     main()

@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import re
 import json
+import yaml
 
 def calc_excel_hash(sheet):
     """シート内容からハッシュ値を計算"""
@@ -130,8 +131,50 @@ def parse_with_number(s: str, default: float = 0.5) -> tuple[str, float]:
 
     return name, value
 
+def get_exam_path(target_sub_no: str, target_year: str):
+    dirinfo_path = Path("/Volumes/NBPlan/TTC/build_slide/dirinfo/dirinfo.yaml")
+
+    with open(dirinfo_path, "r", encoding="utf-8") as f:
+        dirinfo = yaml.safe_load(f)
+
+    base_dir = Path(dirinfo[target_year]["dir"])
+
+    sub_folder = None
+    for p in base_dir.iterdir():
+        if p.is_dir() and p.name.startswith(target_sub_no):
+            sub_folder = p
+            break
+
+    if sub_folder is None:
+        raise FileNotFoundError(f"科目フォルダが見つかりません: {target_sub_no}")
+
+    slideinfo_path = sub_folder / "slideinfo" / "slideinfo.yaml"
+
+    with open(slideinfo_path, "r", encoding="utf-8") as f:
+        slideinfo = yaml.safe_load(f)
+
+    exam_koma_no = None
+    for koma_key, info in slideinfo.items():
+        if isinstance(info, dict) and info.get("schedule_type") == "試験":
+            exam_koma_no = str(koma_key)
+            break
+
+    if exam_koma_no is None:
+        raise ValueError("slideinfo.yaml 内に schedule_type: 試験 のコマが見つかりません。")
+
+    exam_dir = sub_folder / exam_koma_no
+    excel_path = exam_dir / "試験問題.xlsx"
+    work_dir = exam_dir / "work"
+
+    return excel_path, work_dir, exam_koma_no, sub_folder
+
 if __name__ == "__main__":
     from pathlib import Path
+
+    excel_path, work_dir, exam_koma_no, sub_folder =get_exam_path("1020701", "2026")
+
+    print(excel_path, work_dir, exam_koma_no, sub_folder )
+    exit()
 
     # 現在の場所
     curdir = Path(__file__).parent.parent

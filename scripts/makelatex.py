@@ -29,6 +29,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from utils import get_exam_path
 
 import re
 from datetime import datetime
@@ -599,10 +600,26 @@ def load_versions_from_json(sheet: str) -> List[str]:
             vers.append(str(vv))
     return vers if vers else ["A"]
 
+def load_versions_from_json_path(json_path: Path) -> List[str]:
+    if not json_path.exists():
+        raise FileNotFoundError(f"work json not found: {json_path}")
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    vers = []
+    for v in (data.get("versions") or []):
+        vv = v.get("version")
+        if vv:
+            vers.append(str(vv))
+    return vers if vers else ["A"]
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("sheetname", help="Excel sheet name (also json name, e.g. 1020201)")
+#    ap.add_argument("sheetname", help="Excel sheet name (also json name, e.g. 1020201)")
+
+    ap.add_argument("subject_no", help="科目番号。通常はシート名にも使う")
+    ap.add_argument("year", nargs="?", default="2026", help="年度。省略時は2026")
+    ap.add_argument("sheetname", nargs="?", default=None, help="シート名。省略時は科目番号")
+
 #    ap.add_argument("--version", default="A", help="A/B/... (default A)")
     ap.add_argument("--version", help="A/B/... (default A)")
     ap.add_argument("--in", dest="inpath", default=None, help="input json path (default: ../work/<sheet>.json)")
@@ -613,21 +630,27 @@ def main() -> None:
 
 #    rootdir = Path(__file__).parent.parent
     rootdir = project_root()
-    inpath = Path(args.inpath) if args.inpath else (rootdir / "work" / f"{args.sheetname}.json")
+    sheetname = args.sheetname if args.sheetname else args.subject_no
+    excel_path, work_dir, exam_koma_no, sub_folder = get_exam_path(args.subject_no, args.year)
+    inpath = Path(args.inpath) if args.inpath else (work_dir / f"{sheetname}.json")
+#    inpath = Path(args.inpath) if args.inpath else (rootdir / "work" / f"{args.sheetname}.json")
     #outpath = Path(args.outpath) if args.outpath else (rootdir / "sandbox" / f"{args.sheetname}.tex")
 
     data = json.loads(inpath.read_text(encoding="utf-8"))
 
     # バージョンの取得
     if args.version is None:
-        vers =  load_versions_from_json(args.sheetname)
+        vers = load_versions_from_json_path(inpath)
     else:
-        vers =  [args.version]
+        vers = [args.version]
+
     print(vers)
     for ver in vers:
-        outpath = rootdir / "output" /   args.sheetname / ver / f"{args.sheetname}_{ver}_body.tex"
+        if args.outpath:
+            outpath = Path(args.outpath)
+        else:
+            outpath = work_dir / "latex" / ver / f"{sheetname}_{ver}_body.tex"
 
-#        tex = generate_version_tex(data, version=args.version, include_cover=args.cover, with_trace=(not args.no_trace))
         tex = generate_version_tex(data, ver, include_cover=args.cover, with_trace=(not args.no_trace))
 
         outpath.parent.mkdir(parents=True, exist_ok=True)

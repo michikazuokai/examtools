@@ -9,7 +9,7 @@ from typing import Optional
 
 # 既存プロジェクトの共通ユーティリティ（v1と同じ）
 from utils import setspace, parse_with_number
-from utils import calc_excel_hash, get_exam_path
+from utils import calc_excel_hash
 from versioncontrol_yaml import ensure_version_entry
 
 from contract import normalize_document, validate_document, ContractError
@@ -1126,30 +1126,28 @@ def restore_math_segments(obj, mapping: dict):
 
 
 if __name__ == "__main__":
+    """
+    使い方:
+      python makedocjsonv2.py <sheetname> [excel_filename]
+    例:
+      python makedocjsonv2.py 2022001 試験問題.xlsm
+    """
     if len(sys.argv) < 2:
-        print("Usage: python maketexjson.py <subject_no> [year] [sheetname]")
+        print("Usage: python makedocjsonv2.py <sheetname> [excel_filename]")
         sys.exit(1)
 
-    subject_no = sys.argv[1]
-    target_year = sys.argv[2] if len(sys.argv) >= 3 else "2026"
-    sheetname = sys.argv[3] if len(sys.argv) >= 4 else subject_no
-
-    excel_path, work_dir, exam_koma_no, sub_folder = get_exam_path(subject_no, target_year)
-
-    print(f"科目番号: {subject_no}")
-    print(f"年度: {target_year}")
-    print(f"シート名: {sheetname}")
-    print(f"試験コマ番号: {exam_koma_no}")
-    print(f"入力Excel: {excel_path}")
-    print(f"出力work: {work_dir}")
+    curdir = Path(__file__).parent.parent
+    sheetname = sys.argv[1]
+    examdata = "試験問題.xlsm" if len(sys.argv) < 3 else sys.argv[2]
+    excel_path = curdir / "input" / examdata
 
     wb = openpyxl.load_workbook(excel_path)
     ws = wb[sheetname]
 
+    # hash / version 管理（v1と同じ）
     ehash = calc_excel_hash(ws)
     wver = ensure_version_entry(ehash, str(excel_path), sheetname)
-    print("wver", wver)
-
+    print("wver",wver)
 
     # qpattern を読む（v1と同じ）
     _ = excel_to_json_v2(ws, version="A")
@@ -1200,10 +1198,12 @@ if __name__ == "__main__":
         print(e)          # src付きでエラーを出す
         raise SystemExit(2)
 
-    out = work_dir / f"{sheetname}.json"
+    out = curdir / "work" / f"{sheetname}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-
     with open(out, "w", encoding="utf-8") as f:
         json.dump(outjson, f, ensure_ascii=False, indent=2)
 
     print(f"✅ jsonファイルを作成しました: {out}")
+
+    run_json_validator(out, strict=False)  # まずは strict=False 推奨
+    print("✅ JSON contract validation OK")

@@ -4,12 +4,50 @@ from tkinter import messagebox
 from datetime import datetime
 from pathlib import Path
 import sys
+from utils import get_exam_path
 
 # --- 設定：装飾スタイル (RGB) ---
 COMMENT_FILL_RGB = (255, 230, 153)  # FFE699
 COMMENT_FONT_BOLD = True
 
-def output_summary_v2(stats, comment_cnt, sheet_name):
+def output_summary_v2(stats, comment_cnt, sheet_name, log_dir=None):
+    """結果をポップアップ表示し、ログファイルに記録する"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    msg = (
+        f"【処理結果レポート】 ({now})\n"
+        f"対象シート: {sheet_name}\n"
+        f"{'-'*30}\n"
+        f"・問題数: {stats['total_questions']}\n"
+        f"・小問題数: {stats['total_subquestions']}\n"
+        f"・得点合計: {stats['total_points']} 点\n"
+        f"・改ページ数: {stats['pagebreaks']}\n"
+        f"・コメント挿入/更新: {comment_cnt} 箇所\n"
+        f"・QID更新: {stats['qid_updates']} 箇所\n"
+        f"{'-'*30}\n"
+        "更新が完了しました（保存は手動で行ってください）。"
+    )
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    messagebox.showinfo("実行完了", msg)
+    root.destroy()
+
+    if log_dir is None:
+        log_dir = Path(__file__).parent
+    else:
+        log_dir = Path(log_dir)
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_file = log_dir / "process_history.log"
+
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(msg + "\n\n")
+
+    print(f"✅ 画面に結果を表示しました。履歴: {log_file}")
+
+def _output_summary_v2(stats, comment_cnt, sheet_name):
     """結果をポップアップ表示し、ログファイルに記録する"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     msg = (
@@ -40,7 +78,8 @@ def output_summary_v2(stats, comment_cnt, sheet_name):
     
     print(f"✅ 画面に結果を表示しました。履歴: {log_file}")
 
-def update_active_sheet():
+#def update_active_sheet():
+def update_active_sheet(log_dir=None):
     """現在アクティブなExcelシートを直接更新する"""
     try:
         # 現在アクティブなブックとシートを取得
@@ -168,7 +207,23 @@ def update_active_sheet():
 
 
     # 結果の表示と保存
-    output_summary_v2(stats, comment_change_cnt, ws.name)
+    #output_summary_v2(stats, comment_change_cnt, ws.name)
+    output_summary_v2(stats, comment_change_cnt, ws.name, log_dir=log_dir)
 
 if __name__ == "__main__":
-    update_active_sheet()
+    subject_no = sys.argv[1] if len(sys.argv) >= 2 else None
+    target_year = sys.argv[2] if len(sys.argv) >= 3 else "2026"
+
+    log_dir = None
+
+    if subject_no:
+        excel_path, work_dir, exam_koma_no, sub_folder = get_exam_path(subject_no, target_year)
+        log_dir = work_dir
+
+        print(f"科目番号: {subject_no}")
+        print(f"年度: {target_year}")
+        print(f"試験コマ番号: {exam_koma_no}")
+        print(f"想定Excel: {excel_path}")
+        print(f"ログ出力先: {log_dir}")
+
+    update_active_sheet(log_dir=log_dir)
