@@ -6,6 +6,97 @@ import re
 import json
 import yaml
 
+from dataclasses import dataclass
+from typing import Any
+import argparse
+import openpyxl
+
+@dataclass
+class ExamContext:
+    subject: str
+    fsyear: str
+    excel_path: Path
+    exam_dir: Path
+    work_dir: Path
+    sheetname: str
+    exam_koma_no: str | None = None
+    sub_folder: Path | None = None
+    workbook: Any | None = None
+    worksheet: Any | None = None
+
+def add_subject_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("subject", help="科目番号。例: 1020701")
+
+
+def add_dryrun_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--dryrun", action="store_true", help="保存せずに確認する")
+
+def get_current_fsyear() -> str:
+    """
+    dirinfo.yaml の fsyear を取得する。
+    例:
+      fsyear: '2026'
+    """
+    dirinfo_path = Path("/Volumes/NBPlan/TTC/build_slide/dirinfo/dirinfo.yaml")
+
+    with open(dirinfo_path, "r", encoding="utf-8") as f:
+        dirinfo = yaml.safe_load(f) or {}
+
+    fsyear = dirinfo.get("fsyear")
+    if fsyear is None or str(fsyear).strip() == "":
+        raise ValueError(f"dirinfo.yaml に fsyear がありません: {dirinfo_path}")
+
+    return str(fsyear).strip()
+
+def load_exam_context(subject: str, *, load_workbook: bool = True) -> ExamContext:
+    subject = str(subject)
+
+    fsyear = get_current_fsyear()
+
+    excel_path, work_dir, exam_koma_no, sub_folder = get_exam_path(subject, fsyear)
+
+    excel_path = Path(excel_path)
+    work_dir = Path(work_dir)
+    exam_dir = excel_path.parent
+    sheetname = subject
+
+    exam_context = ExamContext(
+        subject=subject,
+        fsyear=fsyear,
+        excel_path=excel_path,
+        exam_dir=exam_dir,
+        work_dir=work_dir,
+        sheetname=sheetname,
+        exam_koma_no=str(exam_koma_no),
+        sub_folder=Path(sub_folder),
+    )
+
+    if load_workbook:
+        wb = openpyxl.load_workbook(excel_path)
+        if sheetname not in wb.sheetnames:
+            raise ValueError(f"シートが見つかりません: {sheetname}")
+        exam_context.workbook = wb
+        exam_context.worksheet = wb[sheetname]
+
+    return exam_context
+
+def get_qpattern(ws) -> str:
+    """
+    qpattern タグのB列から A / B / A,B を取得する。
+    見つからない場合は A とみなす。
+    """
+    for row_no in range(1, ws.max_row + 1):
+        tag = ws.cell(row_no, 1).value
+        tag = "" if tag is None else str(tag).strip()
+
+        if tag == "qpattern":
+            value = ws.cell(row_no, 2).value
+            if value is None or str(value).strip() == "":
+                return "A"
+            return str(value).strip().upper().replace(" ", "")
+
+    return "A"
+
 def calc_excel_hash(sheet):
     """シート内容からハッシュ値を計算"""
     content = []

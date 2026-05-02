@@ -13,7 +13,13 @@ import openpyxl
 from openpyxl.comments import Comment
 from openpyxl.styles import PatternFill, Font
 
-from utils import calc_excel_hash, get_exam_path
+from utils import (
+    calc_excel_hash,
+    get_qpattern,
+    add_subject_arg,
+    add_dryrun_arg,
+    load_exam_context,
+)
 
 from datetime import datetime
 
@@ -1000,28 +1006,29 @@ def main() -> None:
             "通常実行ではExcelを保存し、Validation OK時にstampを作成します。"
         )
     )
-    parser.add_argument("subject", help="科目番号。例: 1020701")
-    parser.add_argument("fsyear_pos", nargs="?", default=None, help="年度。例: 2026（任意）")
-    parser.add_argument("sheet_pos", nargs="?", default=None, help="シート名（任意。未指定なら科目番号）")
-    parser.add_argument("--fsyear", default=None, help="年度。例: 2026")
-    parser.add_argument("--sheet", default=None, help="シート名。未指定なら科目番号")
-    parser.add_argument("--excel", default=None, help="試験問題.xlsx のパスを直接指定")
-    parser.add_argument("--dryrun", action="store_true", help="保存せずに処理結果だけ確認します。stampも作成しません。")
+
+    add_subject_arg(parser)
+    add_dryrun_arg(parser)
 
     args = parser.parse_args()
 
     subject = str(args.subject)
-    fsyear = args.fsyear or args.fsyear_pos or "2026"
-    sheetname = args.sheet or args.sheet_pos or subject
 
-    excel_path, work_dir, exam_koma_no, sub_folder = resolve_excel_path(subject, fsyear, args.excel)
+    exam_context = load_exam_context(subject, load_workbook=False)
+
+    excel_path = exam_context.excel_path
+    work_dir = exam_context.work_dir
+    sheetname = exam_context.sheetname
+    exam_koma_no = exam_context.exam_koma_no
+    sub_folder = exam_context.sub_folder
 
     print(f"科目番号: {subject}")
-    print(f"年度: {fsyear}")
+    print(f"年度: {exam_context.fsyear}")
     print(f"シート名: {sheetname}")
     if exam_koma_no:
         print(f"試験コマ番号: {exam_koma_no}")
     print(f"入力Excel: {excel_path}")
+    print(f"出力work: {work_dir}")
 
     if not excel_path.exists():
         raise FileNotFoundError(f"Excelファイルが見つかりません: {excel_path}")
@@ -1073,25 +1080,35 @@ def main() -> None:
         print("Validation errors:")
         for e in errors:
             print(f" - Row {e['row']}: {e['message']}")
+
         if should_save:
             print("エラーがあります。Excelは保存しましたが、validation stamp は作成しません。")
             print("Excelを開いてコメントを確認し、修正後に再実行してください。")
         else:
             print("dryrun のため保存していません。")
+
         sys.exit(1)
 
     print("Validation OK!")
 
     if should_save:
         print("Excelを保存しました。")
+
         # 保存後の内容でstampを作る
         wb2 = openpyxl.load_workbook(excel_path, data_only=False)
         ws2 = wb2[sheetname]
-        stamp_path = write_validation_stamp(excel_path, Path(work_dir), subject, sheetname, ws2, qpattern)
+
+        stamp_path = write_validation_stamp(
+            excel_path,
+            Path(work_dir),
+            subject,
+            sheetname,
+            ws2,
+            qpattern,
+        )
         print(f"validation stamp: {stamp_path}")
     else:
         print("dryrun のため保存していません。validation stamp も作成していません。")
-
 
 if __name__ == "__main__":
     main()
