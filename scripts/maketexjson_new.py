@@ -1,15 +1,24 @@
-import json
-import openpyxl
-from pathlib import Path
+import argparse
 import sys
+
+from utils import add_subject_arg, load_exam_context, get_qpattern
+
+import json
+from pathlib import Path
 import re
 import subprocess
 from datetime import datetime
 from typing import Optional
 
 # 既存プロジェクトの共通ユーティリティ（v1と同じ）
-from utils import setspace, parse_with_number
-from utils import calc_excel_hash, get_exam_path
+from utils import (
+    add_subject_arg,
+    load_exam_context,
+    get_qpattern,
+    setspace,
+    parse_with_number,
+    calc_excel_hash,
+)
 from versioncontrol_yaml import ensure_version_entry
 
 from contract import normalize_document, validate_document, ContractError
@@ -34,6 +43,27 @@ def _load_validation_stamp(work_dir: Path, subject_no: str) -> dict:
 
     with stamp_path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def parse_qpattern(qpattern_value) -> list[str]:
+    """
+    qpattern から出力版のリストを作る。
+    例:
+      A     -> ["A"]
+      A,B   -> ["A", "B"]
+      B     -> ["B"]
+    """
+    text = str(qpattern_value or "A").upper().replace(" ", "")
+    versions = [v for v in text.split(",") if v]
+
+    if not versions:
+        versions = ["A"]
+
+    for v in versions:
+        if v not in {"A", "B"}:
+            raise ValueError(f"qpattern が不正です: {qpattern_value}")
+
+    return versions
 
 
 def require_validated_excel(ws, *, work_dir: Path, subject_no: str, sheetname: str, excel_path: Path) -> str:
@@ -93,7 +123,6 @@ def require_validated_excel(ws, *, work_dir: Path, subject_no: str, sheetname: s
     return current_hash
 
 # v2: qpattern は b_exam ブロックの qpattern 行から取得（v1同様）
-qpattern = None
 current_premise = None
 current_preline = None
 def escape_tex_outside_inline_math(s: str) -> str:
@@ -275,7 +304,6 @@ def _make_labels(scheme: str, n: int):
             labels.append(str(i + 1))
     return labels
 
-import re
 
 def parse_before_after(cell_value, *, default=(0, 0)):
     """
@@ -367,7 +395,7 @@ def excel_to_json_v2(ws, version="A"):
         - src: {sheet,row[,row_end]}
       - ブロック（b_...〜e_...）は row_end を付与する
     """
-    global qpattern
+#    global qpattern
 
     sheetname = getattr(ws, "title", "") or ""
 
@@ -1272,58 +1300,50 @@ def restore_math_segments(obj, mapping: dict):
             else:
                 restore_math_segments(v, mapping)
 
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="試験問題.xlsxからJSONを作成します。"
+    )
+    add_subject_arg(parser)
+    args = parser.parse_args()
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python maketexjson.py <subject_no> [year] [sheetname]")
-        sys.exit(1)
+    exam_context = load_exam_context(args.subject, load_workbook=True)
+    ws = exam_context.worksheet
 
-    subject_no = sys.argv[1]
-    target_year = sys.argv[2] if len(sys.argv) >= 3 else "2026"
-    sheetname = sys.argv[3] if len(sys.argv) >= 4 else subject_no
+    subject_no = exam_context.subject
+    sheetname = exam_context.sheetname
+    excel_path = exam_context.excel_path
+    work_dir = exam_context.work_dir
 
-    excel_path, work_dir, exam_koma_no, sub_folder = get_exam_path(subject_no, target_year)
-
-    print(f"科目番号: {subject_no}")
-    print(f"年度: {target_year}")
-    print(f"シート名: {sheetname}")
-    print(f"試験コマ番号: {exam_koma_no}")
-    print(f"入力Excel: {excel_path}")
-    print(f"出力work: {work_dir}")
-
-    wb = openpyxl.load_workbook(excel_path)
-    ws = wb[sheetname]
+    print(f"科目番号: {exam_context.subject}")
+    print(f"年度: {exam_context.fsyear}")
+    print(f"シート名: {exam_context.sheetname}")
+    print(f"試験コマ番号: {exam_context.exam_koma_no}")
+    print(f"入力Excel: {exam_context.excel_path}")
+    print(f"出力work: {exam_context.work_dir}")
 
     # validate_excel.py が正常終了し、現在のExcel内容とstampのhashが一致する場合のみ実行する
-    try:
-        ehash = require_validated_excel(
-            ws,
-            work_dir=work_dir,
-            subject_no=subject_no,
-            sheetname=sheetname,
-            excel_path=excel_path,
-        )
-        print("🙆‍♀️ validate stamp: OK")
-    except RuntimeError as e:
-        print()
-        print("🙅🏻‍♂️ エラー:")
-        print(e)
-        raise SystemExit(1)
+    ehash = require_validated_excel(
+        ws,
+        work_dir=work_dir,
+        subject_no=subject_no,
+        sheetname=sheetname,
+        excel_path=excel_path,
+    )
+    print("🙆‍♀️ validate stamp: OK")
 
     wver = ensure_version_entry(ehash, str(excel_path), sheetname)
     print("wver", wver)
 
+    # qpattern を読む
+    qpattern_value = get_qpattern(ws)
+    qp = parse_qpattern(qpattern_value)
 
-    # qpattern を読む（v1と同じ）
-    _ = excel_to_json_v2(ws, version="A")
-    qp = qpattern if qpattern else ["A"]
-
-    # single: バージョンが1つだけ（Aのみ／Bのみ等）
-    # multi : 複数バージョン（例: A,B）
-    versionmode = "single" if (not qp or len(qp) == 1) else "multi"
-
-#    versionmode = "single" if (not qp or qp == ["A"]) else "multi"
-    outjson = {"versionmode": versionmode, "versions": []}
+    versionmode = "single" if len(qp) == 1 else "multi"
+    outjson = {
+        "versionmode": versionmode,
+        "versions": [],
+    }
 
     for v in qp:
         questions = excel_to_json_v2(ws, version=v)
@@ -1331,36 +1351,44 @@ if __name__ == "__main__":
         # multi のときだけ、cover.title に " (A)" / " (B)" を付与
         if versionmode == "multi":
             apply_version_suffix_to_cover_title(questions, v)
+
         dt = datetime.now()
+
         block = {
             "version": v,
             "questions": questions,
             "metainfo": {
                 "type": "metainfo",
-                "hash": ehash,
-#                "createdatetime": str(wver["createdatetime"]) if isinstance(wver, dict) and "createdatetime" in wver else "",
-#                "verno": wver.get("verno") if isinstance(wver, dict) else None,
-                "createdatetime": dt.strftime('%Y-%m-%d %H:%M:%S'),
+                "hash": ehash,  # 既存互換用
+                "source_excel_hash": ehash,
+                "createdatetime": dt.strftime("%Y-%m-%d %H:%M:%S"),
                 "verno": wver,
                 "inputpath": str(excel_path),
                 "sheetname": sheetname,
+                "subject": subject_no,
+                "fsyear": exam_context.fsyear,
+                "qpattern": qpattern_value,
+                "created_by": "maketexjson.py",
             },
         }
+
         outjson["versions"].append(block)
 
     _math_map = {}
     _counter = [0]
+
     # 数式を一時退避（\(...\), \[...\]）
     protect_math_segments(outjson, _math_map, _counter)
-    # ... outjson を作り終えた直後（dumpの直前）...
+
     normalize_document(outjson)
+
     # 数式を復元
     restore_math_segments(outjson, _math_map)
 
     try:
         validate_document(outjson, strict=True, warn_unknown_keys=True)
     except ContractError as e:
-        print(e)          # src付きでエラーを出す
+        print(e)
         raise SystemExit(2)
 
     out = work_dir / f"{sheetname}.json"
@@ -1370,3 +1398,18 @@ if __name__ == "__main__":
         json.dump(outjson, f, ensure_ascii=False, indent=2)
 
     print(f"✅ jsonファイルを作成しました: {out}")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        if "--debug" in sys.argv:
+            import traceback
+            traceback.print_exc()
+        else:
+            print()
+            print("🙅🏻‍♂️ エラー:")
+            print(e)
+        raise SystemExit(1)
