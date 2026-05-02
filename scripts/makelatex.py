@@ -29,7 +29,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from utils import get_exam_path
+from utils import add_subject_arg, load_exam_context
 
 import re
 from datetime import datetime
@@ -630,28 +630,28 @@ def generate_version_tex(data: Dict[str, Any], version: str = "A", include_cover
     trim_trailing_page_controls(out)
     return "\n\n".join(out).strip() + "\n"
 
-def project_root() -> Path:
-    # scripts/ の1つ上を root とみなす
-    return Path(__file__).resolve().parent.parent
+# def project_root() -> Path:
+#     # scripts/ の1つ上を root とみなす
+#     return Path(__file__).resolve().parent.parent
 
-def load_versions_from_json(sheet: str) -> List[str]:
-    """
-    work/<sheet>.json を読み、versions[].version から A/B を取得する。
-    ない場合は ["A"] とみなす。
-    """
-    root = project_root()
-    json_path = root / "work" / f"{sheet}.json"
-    if not json_path.exists():
-        # ③だけ担当なので、jsonが無ければ版が分からない
-        raise FileNotFoundError(f"work json not found: {json_path}")
+# def load_versions_from_json(sheet: str) -> List[str]:
+#     """
+#     work/<sheet>.json を読み、versions[].version から A/B を取得する。
+#     ない場合は ["A"] とみなす。
+#     """
+#     root = project_root()
+#     json_path = root / "work" / f"{sheet}.json"
+#     if not json_path.exists():
+#         # ③だけ担当なので、jsonが無ければ版が分からない
+#         raise FileNotFoundError(f"work json not found: {json_path}")
 
-    data = json.loads(json_path.read_text(encoding="utf-8"))
-    vers = []
-    for v in (data.get("versions") or []):
-        vv = v.get("version")
-        if vv:
-            vers.append(str(vv))
-    return vers if vers else ["A"]
+#     data = json.loads(json_path.read_text(encoding="utf-8"))
+#     vers = []
+#     for v in (data.get("versions") or []):
+#         vv = v.get("version")
+#         if vv:
+#             vers.append(str(vv))
+#     return vers if vers else ["A"]
 
 def load_versions_from_json_path(json_path: Path) -> List[str]:
     if not json_path.exists():
@@ -665,51 +665,154 @@ def load_versions_from_json_path(json_path: Path) -> List[str]:
             vers.append(str(vv))
     return vers if vers else ["A"]
 
+def require_versions_same_source_hash(data: dict, json_path: Path) -> str:
+    """
+    JSON内の各versionに source_excel_hash があるか確認する。
+    A/B版がある場合は、すべて同じ source_excel_hash であることも確認する。
+    """
+    versions = data.get("versions") or []
+
+    if not versions:
+        raise RuntimeError(
+            f"JSONに versions がありません。\n"
+            f"JSON path: {json_path}"
+        )
+
+    hashes: list[str] = []
+
+    for block in versions:
+        version = block.get("version", "?")
+        metainfo = block.get("metainfo", {}) or {}
+
+        source_hash = metainfo.get("source_excel_hash") or metainfo.get("hash")
+
+        if not source_hash:
+            raise RuntimeError(
+                f"JSONの version={version} に source_excel_hash がありません。\n"
+                f"先に make_json.py を再実行してください。\n"
+                f"JSON path: {json_path}"
+            )
+
+        hashes.append(str(source_hash))
+
+    unique_hashes = sorted(set(hashes))
+
+    if len(unique_hashes) != 1:
+        raise RuntimeError(
+            "JSON内のA/B版で source_excel_hash が一致しません。\n"
+            f"hashes: {unique_hashes}\n"
+            f"JSON path: {json_path}"
+        )
+
+    return unique_hashes[0]
+
+
+def get_metainfo_for_version(data: dict, version: str) -> dict:
+    """
+    指定versionのmetainfoを取得する。
+    見つからない場合は空dict。
+    """
+    for block in data.get("versions") or []:
+        if str(block.get("version")) == str(version):
+            return block.get("metainfo", {}) or {}
+    return {}
+
+
+def make_tex_header_comment(
+    *,
+    subject: str,
+    json_path: Path,
+    version: str,
+    metainfo: dict,
+) -> str:
+    """
+    TeX冒頭に生成元情報をコメントとして入れる。
+    """
+    source_hash = metainfo.get("source_excel_hash") or metainfo.get("hash") or ""
+
+    return "\n".join([
+        "% generated_by: make_latex.py",
+        f"% subject: {subject}",
+        f"% version: {version}",
+        f"% source_excel_hash: {source_hash}",
+        f"% source_json_path: {json_path}",
+        f"% qpattern: {metainfo.get('qpattern', '')}",
+        f"% fsyear: {metainfo.get('fsyear', '')}",
+        "",
+    ])
+
 def main() -> None:
-    ap = argparse.ArgumentParser()
-#    ap.add_argument("sheetname", help="Excel sheet name (also json name, e.g. 1020201)")
-
-    ap.add_argument("subject_no", help="科目番号。通常はシート名にも使う")
-    ap.add_argument("year", nargs="?", default="2026", help="年度。省略時は2026")
-    ap.add_argument("sheetname", nargs="?", default=None, help="シート名。省略時は科目番号")
-
-#    ap.add_argument("--version", default="A", help="A/B/... (default A)")
-    ap.add_argument("--version", help="A/B/... (default A)")
-    ap.add_argument("--in", dest="inpath", default=None, help="input json path (default: ../work/<sheet>.json)")
-    ap.add_argument("--out", dest="outpath", default=None, help="output tex path (default: ../sandbox/<sheet>.tex)")
+    ap = argparse.ArgumentParser(description="JSONからLaTeX本文を作成します。")
+    add_subject_arg(ap)
     ap.add_argument("--cover", action="store_true", help="include cover comments")
     ap.add_argument("--no-trace", action="store_true", help="disable trace comments")
     args = ap.parse_args()
 
-#    rootdir = Path(__file__).parent.parent
-    rootdir = project_root()
-    sheetname = args.sheetname if args.sheetname else args.subject_no
-    excel_path, work_dir, exam_koma_no, sub_folder = get_exam_path(args.subject_no, args.year)
-    inpath = Path(args.inpath) if args.inpath else (work_dir / f"{sheetname}.json")
-#    inpath = Path(args.inpath) if args.inpath else (rootdir / "work" / f"{args.sheetname}.json")
-    #outpath = Path(args.outpath) if args.outpath else (rootdir / "sandbox" / f"{args.sheetname}.tex")
+    exam_context = load_exam_context(args.subject, load_workbook=False)
 
-    data = json.loads(inpath.read_text(encoding="utf-8"))
+    subject = exam_context.subject
+    sheetname = exam_context.sheetname
+    work_dir = exam_context.work_dir
 
-    # バージョンの取得
-    if args.version is None:
-        vers = load_versions_from_json_path(inpath)
-    else:
-        vers = [args.version]
+    json_path = work_dir / f"{subject}.json"
 
-    print(vers)
+    print(f"科目番号: {exam_context.subject}")
+    print(f"年度: {exam_context.fsyear}")
+    print(f"シート名: {exam_context.sheetname}")
+    print(f"試験コマ番号: {exam_context.exam_koma_no}")
+    print(f"入力JSON: {json_path}")
+
+    if not json_path.exists():
+        raise FileNotFoundError(
+            f"JSONファイルが見つかりません。\n"
+            f"先に make_json.py を実行してください。\n"
+            f"JSON path: {json_path}"
+        )
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+
+    source_excel_hash = require_versions_same_source_hash(data, json_path)
+    print(f"source_excel_hash: {source_excel_hash}")
+
+    vers = load_versions_from_json_path(json_path)
+    print(f"出力版: {','.join(vers)}")
+
     for ver in vers:
-        if args.outpath:
-            outpath = Path(args.outpath)
-        else:
-            outpath = work_dir / "latex" / ver / f"{sheetname}_{ver}_body.tex"
+        outpath = work_dir / "latex" / ver / f"{sheetname}_{ver}_body.tex"
 
-        tex = generate_version_tex(data, ver, include_cover=args.cover, with_trace=(not args.no_trace))
+        tex = generate_version_tex(
+            data,
+            ver,
+            include_cover=args.cover,
+            with_trace=(not args.no_trace),
+        )
+
+        metainfo = get_metainfo_for_version(data, ver)
+        tex = make_tex_header_comment(
+            subject=subject,
+            json_path=json_path,
+            version=ver,
+            metainfo=metainfo,
+        ) + tex
 
         outpath.parent.mkdir(parents=True, exist_ok=True)
         outpath.write_text(tex, encoding="utf-8")
+
         print(f"✅ wrote: {outpath}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        import sys
+        if "--debug" in sys.argv:
+            import traceback
+            traceback.print_exc()
+        else:
+            print()
+            print("🙅🏻‍♂️ エラー:")
+            print(e)
+        raise SystemExit(1)
