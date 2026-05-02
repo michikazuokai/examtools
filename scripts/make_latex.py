@@ -18,7 +18,7 @@ Changes in this fixed version:
   * choices: {type:"choices", style:"normal|inline", sep?:int, values:[{label,text,src,tag},...]}
 
 CLI (kept compatible):
-  python makelatex.py <sheetname> --version A
+  python make_latex.py <sheetname> --version A
 
 """
 

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-texmerge_compile.py  (V2)
+make_pdf.py  (V2)
   body.tex + templates -> full .tex -> lualatex compile -> pdf
 
 This script does NOT:
@@ -19,8 +19,8 @@ It only:
   - runs lualatex
 
 Usage:
-  python scripts/texmerge_compile.py 1020201
-  python scripts/texmerge_compile.py 1020201 --runs 2
+  python scripts/make_pdf.py 1020201
+  python scripts/make_pdf.py 1020201 --runs 2
 """
 
 import argparse

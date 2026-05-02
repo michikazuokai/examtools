@@ -30,7 +30,7 @@ from contract import normalize_document, validate_document, ContractError
 def _load_validation_stamp(work_dir: Path, subject_no: str) -> dict:
     """
     validate_excel.py が作成した validation_stamp を読む。
-    stamp がない場合は、maketexjson.py を実行しない。
+    stamp がない場合は、make_json.py を実行しない。
     """
     stamp_path = Path(work_dir) / f"validation_stamp_{subject_no}.json"
     if not stamp_path.exists():
@@ -68,7 +68,7 @@ def parse_qpattern(qpattern_value) -> list[str]:
 
 def require_validated_excel(ws, *, work_dir: Path, subject_no: str, sheetname: str, excel_path: Path) -> str:
     """
-    maketexjson.py 実行前に、validate_excel.py 済みかを確認する。
+    make_json.py 実行前に、validate_excel.py 済みかを確認する。
 
     確認内容:
       - validation_stamp_{subject}.json が存在する
@@ -1368,7 +1368,7 @@ def main() -> None:
                 "subject": subject_no,
                 "fsyear": exam_context.fsyear,
                 "qpattern": qpattern_value,
-                "created_by": "maketexjson.py",
+                "created_by": "make_json.py",
             },
         }
 
