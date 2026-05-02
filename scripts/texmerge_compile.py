@@ -10,15 +10,16 @@ This script does NOT:
   - generate body.tex from json
 
 It only:
-  - finds body.tex for each version (A/B...)
-  - copies templates into output/<sheet>/<ver>/
-  - injects graphicspath for images/<sheet>/
-  - creates full tex (compile-ready)
+  - reads work/{subject}.json
+  - finds work/latex/{version}/{subject}_{version}_body.tex
+  - checks source_excel_hash between JSON and body.tex
+  - copies templates into exam_dir/pdf/{version}/
+  - injects graphicspath for exam_dir/images/
+  - creates full tex
   - runs lualatex
 
 Usage:
   python scripts/texmerge_compile.py 1020201
-  python scripts/texmerge_compile.py 1020201 --version A
   python scripts/texmerge_compile.py 1020201 --runs 2
 """
 
@@ -29,7 +30,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
-from utils import get_exam_path
+from utils import add_subject_arg, load_exam_context
 
 def project_root() -> Path:
     # scripts/ の1つ上を root とみなす
@@ -51,36 +52,6 @@ def run_cmd(cmd: List[str], cwd: Optional[Path] = None) -> None:
     if r.returncode != 0:
         raise RuntimeError(f"Command failed (code={r.returncode}): {' '.join(cmd)}")
 
-def load_versions_from_json_path(json_path: Path) -> List[str]:
-    if not json_path.exists():
-        raise FileNotFoundError(f"work json not found: {json_path}")
-
-    data = json.loads(json_path.read_text(encoding="utf-8"))
-    vers = []
-    for v in (data.get("versions") or []):
-        vv = v.get("version")
-        if vv:
-            vers.append(str(vv))
-    return vers if vers else ["A"]
-
-def load_versions_from_json(sheet: str) -> List[str]:
-    """
-    work/<sheet>.json を読み、versions[].version から A/B を取得する。
-    ない場合は ["A"] とみなす。
-    """
-    root = project_root()
-    json_path = root / "work" / f"{sheet}.json"
-    if not json_path.exists():
-        # ③だけ担当なので、jsonが無ければ版が分からない
-        raise FileNotFoundError(f"work json not found: {json_path}")
-
-    data = json.loads(json_path.read_text(encoding="utf-8"))
-    vers = []
-    for v in (data.get("versions") or []):
-        vv = v.get("version")
-        if vv:
-            vers.append(str(vv))
-    return vers if vers else ["A"]
 
 def find_body_tex(work_dir: Path, sheet: str, version: str) -> Path:
     body_path = work_dir / "latex" / version / f"{sheet}_{version}_body.tex"
@@ -90,22 +61,84 @@ def find_body_tex(work_dir: Path, sheet: str, version: str) -> Path:
 
     raise FileNotFoundError(f"body.tex not found: {body_path}")
 
-def _find_body_tex(sheet: str, version: str) -> Path:
+def load_json_data(json_path: Path) -> dict:
     """
-    body.tex の探索ルール（②側の出力場所が揺れても拾えるようにする）
+    JSONファイルを読み込む。
     """
-    root = project_root()
-    candidates = [
-        root / "output" / sheet / version / f"{sheet}_{version}_body.tex",
-        root / "work" / f"{sheet}_{version}_body.tex",
-        root / "output" / sheet / version / "body.tex",
-    ]
-    for p in candidates:
-        if p.exists():
-            return p
-    raise FileNotFoundError(
-        "body.tex not found. Tried:\n" + "\n".join(str(c) for c in candidates)
+    if not json_path.exists():
+        raise FileNotFoundError(
+            f"JSONファイルが見つかりません。\n"
+            f"先に make_json.py を実行してください。\n"
+            f"JSON path: {json_path}"
+        )
+
+    return json.loads(json_path.read_text(encoding="utf-8"))
+
+
+def get_json_source_hash_by_version(data: dict, version: str) -> str:
+    """
+    JSON内の指定versionから source_excel_hash を取得する。
+    """
+    for block in data.get("versions") or []:
+        if str(block.get("version")) != str(version):
+            continue
+
+        metainfo = block.get("metainfo", {}) or {}
+        source_hash = metainfo.get("source_excel_hash") or metainfo.get("hash")
+
+        if not source_hash:
+            raise RuntimeError(
+                f"JSONの version={version} に source_excel_hash がありません。\n"
+                f"先に make_json.py を再実行してください。"
+            )
+
+        return str(source_hash)
+
+    raise RuntimeError(f"JSON内に version={version} が見つかりません。")
+
+
+def get_body_tex_source_hash(body_path: Path) -> str:
+    """
+    body.tex 冒頭コメントから source_excel_hash を取得する。
+
+    make_latex.py 側で次のようなコメントを出している前提:
+      % source_excel_hash: xxxxx
+    """
+    if not body_path.exists():
+        raise FileNotFoundError(f"body.tex が見つかりません: {body_path}")
+
+    for line in body_path.read_text(encoding="utf-8").splitlines()[:30]:
+        line = line.strip()
+        if line.startswith("% source_excel_hash:"):
+            value = line.split(":", 1)[1].strip()
+            if value:
+                return value
+
+    raise RuntimeError(
+        "body.tex に source_excel_hash コメントがありません。\n"
+        "先に make_latex.py を再実行してください。\n"
+        f"body.tex: {body_path}"
     )
+
+
+def require_body_matches_json(body_path: Path, json_data: dict, version: str) -> str:
+    """
+    body.tex の source_excel_hash と JSON metainfo の source_excel_hash が一致するか確認する。
+    """
+    json_hash = get_json_source_hash_by_version(json_data, version)
+    body_hash = get_body_tex_source_hash(body_path)
+
+    if json_hash != body_hash:
+        raise RuntimeError(
+            "body.tex が現在のJSONと一致しません。\n"
+            "先に make_latex.py を再実行してください。\n"
+            f"version   : {version}\n"
+            f"JSON hash : {json_hash}\n"
+            f"TeX hash  : {body_hash}\n"
+            f"body.tex  : {body_path}"
+        )
+
+    return body_hash
 
 
 def copy_templates_to(build_dir: Path) -> None:
@@ -124,35 +157,6 @@ def copy_templates_to(build_dir: Path) -> None:
             raise FileNotFoundError(f"template missing: {src}")
         shutil.copy2(src, build_dir / name)
 
-
-def _inject_graphicspath(build_dir: Path, sheet: str) -> None:
-    """
-    preamble.tex に \graphicspath を注入する。
-    - preamble.tex に @@GRAPHICSPATH@@ があれば置換
-    - 無ければ末尾に追記
-    画像は images/<sheet>/ を見る。
-    """
-    root = project_root()
-    preamble_path = build_dir / "preamble.tex"
-    if not preamble_path.exists():
-        raise FileNotFoundError(f"preamble.tex not found in build_dir: {preamble_path}")
-
-    img_dir = (root / "images" / sheet).resolve()
-    img_dir_posix = img_dir.as_posix()
-
-    # 画像参照はファイル名だけでいけるようにする（\includegraphics{5.png} 等）
-    gsp = (
-        r"\newcommand{\assetpath}{" + img_dir_posix + r"}" + "\n"
-        r"\graphicspath{{\assetpath/}}" + "\n"
-    )
-
-    preamble = read_text(preamble_path)
-    if "@@GRAPHICSPATH@@" in preamble:
-        preamble = preamble.replace("@@GRAPHICSPATH@@", gsp)
-    else:
-        preamble += "\n% --- auto inserted graphicspath ---\n" + gsp
-
-    write_text(preamble_path, preamble)
 
 def inject_graphicspath(build_dir: Path, sheet: str) -> None:
     """
@@ -222,90 +226,61 @@ def compile_lualatex(tex_path: Path, runs: int = 1) -> Path:
     return pdf_path
 
 
-def _main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("sheet", help="sheet name (subject id), e.g. 1020201")
-    ap.add_argument("--version", default=None, help="compile only one version, e.g. A or B")
-    ap.add_argument("--runs", type=int, default=2, help="lualatex runs (default=1)")
-    args = ap.parse_args()
+def get_versions_from_json_data(data: dict) -> list[str]:
+    versions = []
+    for block in data.get("versions", []):
+        ver = block.get("version")
+        if ver:
+            versions.append(str(ver))
 
-    root = project_root()
-    sheet = args.sheet
+    if not versions:
+        raise RuntimeError("JSON内に versions が見つかりません。")
 
-    versions = load_versions_from_json(sheet)
-    if args.version:
-        versions = [args.version]
+    return versions
 
-    for ver in versions:
-        # ②の出力(body)を探す
-        body_path = find_body_tex(sheet, ver)
-
-
-        # 出力先（版ごと）
-        out_dir = root / "output" / sheet / ver
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        # テンプレコピー
-        copy_templates_to(out_dir)
-        # 画像パスは templates/latex/preamble.tex 側で指定する
-        # graphicspath 注入
-        inject_graphicspath(out_dir, sheet)
-
-        # body を out_dir にコピー（\input 参照を安定させる）
-        body_name = f"{sheet}_{ver}_body.tex"
-        dst_body = out_dir / body_name
-
-        # すでに同じ場所ならコピー不要（SameFileError回避）
-        try:
-            if body_path.resolve() != dst_body.resolve():
-                shutil.copy2(body_path, dst_body)
-        except FileNotFoundError:
-            # resolve() が失敗するケース（ネットワーク/特殊パス等）対策
-            if str(body_path) != str(dst_body):
-                shutil.copy2(body_path, dst_body)
-
-        # compile-ready tex を生成
-        full_name = f"{sheet}_{ver}.tex"
-        full_tex_path = build_full_tex(out_dir, body_name, full_name)
-        print(f"✅ TeX merged: {full_tex_path}")
-
-        # compile
-        pdf_path = compile_lualatex(full_tex_path, runs=args.runs)
-        print(f"✅ PDF compiled: {pdf_path}")
-
-    print("🎯 Done.")
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("subject_no", help="科目番号。通常はシート名にも使う")
-    ap.add_argument("year", nargs="?", default="2026", help="年度。省略時は2026")
-    ap.add_argument("sheetname", nargs="?", default=None, help="シート名。省略時は科目番号")
-    ap.add_argument("--version", default=None, help="compile only one version, e.g. A or B")
+def main() -> None:
+    ap = argparse.ArgumentParser(description="LaTeX本文からPDFを作成します。")
+    add_subject_arg(ap)
     ap.add_argument("--runs", type=int, default=2, help="lualatex runs")
     args = ap.parse_args()
 
-    sheet = args.sheetname if args.sheetname else args.subject_no
+    exam_context = load_exam_context(args.subject, load_workbook=False)
 
-    excel_path, work_dir, exam_koma_no, sub_folder = get_exam_path(args.subject_no, args.year)
+    subject = exam_context.subject
+    sheet = exam_context.sheetname
+    work_dir = exam_context.work_dir
+    exam_dir = exam_context.exam_dir
 
-    json_path = work_dir / f"{sheet}.json"
+    json_path = work_dir / f"{subject}.json"
 
-    versions = load_versions_from_json_path(json_path)
-    if args.version:
-        versions = [args.version]
+    print(f"科目番号: {exam_context.subject}")
+    print(f"年度: {exam_context.fsyear}")
+    print(f"シート名: {exam_context.sheetname}")
+    print(f"試験コマ番号: {exam_context.exam_koma_no}")
+    print(f"入力JSON: {json_path}")
+    print(f"入力TeX: {work_dir / 'latex'}")
+    print(f"出力PDF: {exam_dir / 'pdf'}")
+
+
+    json_data = load_json_data(json_path)
+    versions = get_versions_from_json_data(json_data)
+
+    print(f"出力版: {','.join(versions)}")
 
     for ver in versions:
         body_path = find_body_tex(work_dir, sheet, ver)
 
+        # hashチェック：body.tex が JSON と同じExcel由来か確認する
+        source_hash = require_body_matches_json(body_path, json_data, ver)
+        print(f"source_excel_hash({ver}): {source_hash}")
+
         # コンパイル先
-        exam_dir = excel_path.parent
         out_dir = exam_dir / "pdf" / ver
-        # out_dir = work_dir / "pdf" / ver
         out_dir.mkdir(parents=True, exist_ok=True)
 
         copy_templates_to(out_dir)
 
-        # 画像パスは templates/latex/preamble.tex 側で指定する
+        # 画像パス注入
         inject_graphicspath(out_dir, sheet)
 
         body_name = f"{sheet}_{ver}_body.tex"
@@ -324,4 +299,16 @@ def main():
     print("🎯 Done.")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        if "--debug" in sys.argv:
+            import traceback
+            traceback.print_exc()
+        else:
+            print()
+            print("🙅🏻‍♂️ エラー:")
+            print(e)
+        raise SystemExit(1)
