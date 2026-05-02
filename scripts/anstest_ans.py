@@ -6,9 +6,8 @@ from openpyxl import load_workbook
 from ansmake1 import make_pdf
 from datetime import datetime
 from utils import setspace
-from utils import calc_excel_hash, jsonmetainfo
+from utils import calc_excel_hash, jsonmetainfo, get_exam_path, get_nenji_by_subno
 from versioncontrol import ensure_version_entry,get_latest_version,is_latest_version_for_file_sheet
-import sqlite3
 import re
 
 
@@ -16,22 +15,6 @@ import re
 COMMENT_TAGS = {"コメント", "comment"}  # 完全一致で無視する語
 
 qpattern = None
-
-def get_nenji_by_subno(sub_no):
-    """subNoからnenjiを取得"""
-    db_path = "/Volumes/NBPlan/TTC/カルテ管理/2025/DB/classdb.db"
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT nennji FROM class WHERE subNo = ?", (sub_no,))
-        result = cursor.fetchone()
-        return str(result[0]) if result else None
-    except sqlite3.Error as e:
-        print(f"エラー: {e}")
-        return None
-    finally:
-        conn.close()
-
 
 def is_comment(tag: str) -> bool:
     """行タグがコメント行かどうかを判定"""
@@ -70,7 +53,7 @@ def n2char(num):
         e=get_cbn(sdict[v])  
 
 #-----------------------------------------------------------------------
-def build_answer_columns(excel_path, nenji,sh,shname, version="A"):
+def build_answer_columns(excel_path, nenji,sh,shname, work_dir, version="A"):
     global qpattern
 
     # wb = load_workbook(excel_path)
@@ -84,7 +67,8 @@ def build_answer_columns(excel_path, nenji,sh,shname, version="A"):
     wver=ensure_version_entry(ehash,str(excel_path),shname)
     
     # 解答jsonのhashとversionDBのhashが同じバージョンかチェックする
-    cjinfo = jsonmetainfo(curdir / "work",f"answers_{shname}.json")  #jsonのhashを取得
+    #cjinfo = jsonmetainfo(curdir / "work",f"answers_{shname}.json")  #jsonのhashを取得
+    cjinfo = jsonmetainfo(work_dir, f"answers_{shname}.json")
 
     if is_latest_version_for_file_sheet(cjinfo[0], str(excel_path),shname) and 1!=1:
         # エクセルの最新バージョンと解答jsonが同じならばjsonは生成しない
@@ -450,27 +434,31 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="試験問題.xlsm → 解答用JSON → 解答用紙PDF")
     parser.add_argument("subject", help="科目番号（=Excelシート名）")
+    parser.add_argument("--fsyear", default="2026", help="年度。例: 2026")
     parser.add_argument("--version", default=None, help="出力するバージョン（A / B / A,B）。未指定なら全バージョン")
     args = parser.parse_args()
 
     subject = args.subject
-    requested_versions = parse_cli_versions(args.version)  # Noneなら全バージョン
+    fsyear = args.fsyear
+    requested_versions = parse_cli_versions(args.version)
 
-    # 現在の場所
-    curdir = Path(__file__).parent.parent
+    # 授業資料側の試験フォルダを取得
+    pt, work_dir, exam_koma_no, sub_folder = get_exam_path(subject, fsyear)
 
-    # 試験用のエクセルファイル
-    examdata = "試験問題.xlsm"
-    pt = curdir / "input" / examdata
-    po = curdir / "work" / f"answers_{subject}.json"
+    exam_dir = pt.parent
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    po = work_dir / f"answers_{subject}.json"
 
     wb = load_workbook(pt)
     sh = wb[subject]
 
-    nenji = get_nenji_by_subno(subject)
+    nenji = get_nenji_by_subno(subject, fsyear)
+    if nenji is None:
+        raise ValueError(f"受講年次を取得できませんでした: subject={subject}, fsyear={fsyear}")
 
     # まずAで1回作って qpattern/versionmode を確定（既存の流れ）
-    data = build_answer_columns(pt, nenji, sh, subject)
+    data = build_answer_columns(pt, nenji, sh, subject, work_dir)
 
     if data:
         # outjsonの初期化
@@ -487,7 +475,7 @@ if __name__ == "__main__":
             outjson["versionmode"] = "multi"
             for ver in qpattern:
                 print(f"★ バージョン {ver} を生成します")
-                data_ver = build_answer_columns(pt, nenji, sh, subject, ver)
+                data_ver = build_answer_columns(pt, nenji, sh, subject, work_dir, ver)
                 outjson["versions"].append({
                     "version": ver,
                     "questions": data_ver
@@ -523,7 +511,7 @@ if __name__ == "__main__":
             continue
 
         # 出力パス：output/{subject}/{version}/
-        outdir = curdir / "output" / subject / ver
+        outdir = exam_dir / "anspdf" / ver
         outdir.mkdir(parents=True, exist_ok=True)
 
         # ファイル名：{subject}_{version}_解答用紙.pdf

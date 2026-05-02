@@ -1,4 +1,5 @@
 # examtools/utils.py
+from __future__ import annotations
 from pathlib import Path
 import hashlib
 import re
@@ -131,17 +132,24 @@ def parse_with_number(s: str, default: float = 0.5) -> tuple[str, float]:
 
     return name, value
 
-def get_exam_path(target_sub_no: str, target_year: str):
+
+def load_slideinfo_by_subno(target_sub_no: str, target_year: str) -> tuple[dict, Path]:
+    """
+    科目番号と年度から slideinfo.yaml を読み込む。
+
+    Returns:
+        (slideinfo, sub_folder)
+    """
     dirinfo_path = Path("/Volumes/NBPlan/TTC/build_slide/dirinfo/dirinfo.yaml")
 
     with open(dirinfo_path, "r", encoding="utf-8") as f:
         dirinfo = yaml.safe_load(f)
 
-    base_dir = Path(dirinfo[target_year]["dir"])
+    base_dir = Path(dirinfo[str(target_year)]["dir"])
 
     sub_folder = None
     for p in base_dir.iterdir():
-        if p.is_dir() and p.name.startswith(target_sub_no):
+        if p.is_dir() and p.name.startswith(str(target_sub_no)):
             sub_folder = p
             break
 
@@ -150,8 +158,38 @@ def get_exam_path(target_sub_no: str, target_year: str):
 
     slideinfo_path = sub_folder / "slideinfo" / "slideinfo.yaml"
 
+    if not slideinfo_path.exists():
+        raise FileNotFoundError(f"slideinfo.yaml が見つかりません: {slideinfo_path}")
+
     with open(slideinfo_path, "r", encoding="utf-8") as f:
-        slideinfo = yaml.safe_load(f)
+        slideinfo = yaml.safe_load(f) or {}
+
+    return slideinfo, sub_folder
+
+
+def get_nenji_by_subno(sub_no: str, target_year: str) -> str | None:
+    """
+    subNoから受講年次を取得する。
+    旧版ではDBから取得していたが、現在は slideinfo.yaml の target_year を読む。
+    """
+    try:
+        slideinfo, _ = load_slideinfo_by_subno(sub_no, target_year)
+
+        nenji = slideinfo.get("target_year")
+
+        if nenji is None:
+            print(f"slideinfo.yaml に target_year がありません: sub_no={sub_no}")
+            return None
+
+        return str(nenji)
+
+    except Exception as e:
+        print(f"年次情報の取得エラー: {e}")
+        return None
+
+
+def get_exam_path(target_sub_no: str, target_year: str):
+    slideinfo, sub_folder = load_slideinfo_by_subno(target_sub_no, target_year)
 
     exam_koma_no = None
     for koma_key, info in slideinfo.items():
@@ -170,6 +208,10 @@ def get_exam_path(target_sub_no: str, target_year: str):
 
 if __name__ == "__main__":
     from pathlib import Path
+
+    print(get_nenji_by_subno('1020701','2026'))
+
+  
 
     excel_path, work_dir, exam_koma_no, sub_folder =get_exam_path("1020701", "2026")
 
