@@ -21,8 +21,6 @@ from utils import (
     load_exam_context,
 )
 
-from datetime import datetime
-
 def write_validate_log(
     work_dir: Path,
     subject: str,
@@ -852,15 +850,24 @@ def apply_validation_comments(ws, errors: list[dict[str, Any]]) -> int:
 
     return len(grouped)
 
-
-def write_validation_stamp(excel_path: Path, work_dir: Path, subject: str, sheetname: str, ws, qpattern) -> Path:
+def write_validation_stamp(
+    excel_path: Path,
+    work_dir: Path,
+    subject: str,
+    sheetname: str,
+    ws,
+    qpattern,
+    fsyear: str | None = None,) -> Path:
     work_dir.mkdir(parents=True, exist_ok=True)
+    excel_hash = calc_excel_hash(ws)
     stamp = {
         "subject": str(subject),
+        "fsyear": str(fsyear) if fsyear is not None else "",
         "sheetname": str(sheetname),
         "qpattern": qpattern,
         "inputpath": str(excel_path),
-        "hash": calc_excel_hash(ws),
+        "hash": excel_hash,
+        "source_excel_hash": excel_hash,
         "status": "ok",
         "validated_by": "validate_excel.py",
         "validated_at": datetime.now().isoformat(timespec="seconds"),
@@ -872,12 +879,6 @@ def write_validation_stamp(excel_path: Path, work_dir: Path, subject: str, sheet
 # ============================================================
 # 実行処理
 # ============================================================
-def resolve_excel_path(subject: str, fsyear: str, excel: str | None) -> tuple[Path, Path, str, Path]:
-    if excel:
-        excel_path = Path(excel).expanduser().resolve()
-        return excel_path, excel_path.parent / "work", "", excel_path.parent
-    return get_exam_path(subject, fsyear)
-
 def apply_answer_styles(ws) -> dict[str, int]:
     """
     解答タグ行の見た目を整える。
@@ -893,7 +894,6 @@ def apply_answer_styles(ws) -> dict[str, int]:
           游ゴシック / 12pt / 太字 / 0070C0
         にする
     """
-    from openpyxl.styles import PatternFill, Font
 
     target_tags = {
         "b_answer",
@@ -949,7 +949,7 @@ def run_validate(
     sheetname: str,
     *,
     save: bool,
-) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[str], dict[str, Any], str, str]:
     """
     統合版の実行本体。
 
@@ -1105,10 +1105,24 @@ def main() -> None:
             sheetname,
             ws2,
             qpattern,
+            fsyear=exam_context.fsyear,
         )
+
         print(f"validation stamp: {stamp_path}")
     else:
         print("dryrun のため保存していません。validation stamp も作成していません。")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        if "--debug" in sys.argv:
+            import traceback
+            traceback.print_exc()
+        else:
+            print()
+            print("🙅🏻‍♂️ エラー:")
+            print(e)
+        raise SystemExit(1)

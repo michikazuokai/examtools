@@ -744,8 +744,8 @@ def make_tex_header_comment(
 def main() -> None:
     ap = argparse.ArgumentParser(description="JSONからLaTeX本文を作成します。")
     add_subject_arg(ap)
-    ap.add_argument("--cover", action="store_true", help="include cover comments")
-    ap.add_argument("--no-trace", action="store_true", help="disable trace comments")
+    ap.add_argument("--nocover", action="store_true", help="表紙を出力しない")
+    ap.add_argument("--notrace", action="store_true", help="traceコメントを出力しない")
     args = ap.parse_args()
 
     exam_context = load_exam_context(args.subject, load_workbook=False)
@@ -783,8 +783,8 @@ def main() -> None:
         tex = generate_version_tex(
             data,
             ver,
-            include_cover=args.cover,
-            with_trace=(not args.no_trace),
+            include_cover=(not args.nocover),
+            with_trace=(not args.notrace),
         )
 
         metainfo = get_metainfo_for_version(data, ver)
