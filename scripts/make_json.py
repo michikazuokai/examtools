@@ -359,25 +359,39 @@ def _is_one(v) -> bool:
         return False
 
 
-def _sort_questions_for_B(questions):
+def _sort_questions_for_B(items):
     """
-    version=B: b_question の D列 orderB（int）で並び替える
-    - 未入力があればエラー（必須運用）
-    - 重複もエラー
+    version=B:
+      - b_question 由来の大問だけを D列 orderB で並び替える
+      - premise など qid を持たない要素は orderB チェック対象外にする
+      - premise は先頭側に残す
     """
+    non_questions = []
+    questions = []
+
+    for item in items:
+        # premise など、大問ではない要素は並び替え対象外
+        if item.get("type") == "premise" or item.get("qid") is None:
+            non_questions.append(item)
+        else:
+            questions.append(item)
+
     orders = []
     for q in questions:
         ob = q.get("_orderB")
         if ob is None:
-            raise ValueError(f"orderB 未入力の大問があります（qid={q.get('qid')}, 元番号={q.get('number')}）")
+            raise ValueError(
+                f"orderB 未入力の大問があります（qid={q.get('qid')}, 元番号={q.get('number')}）"
+            )
         orders.append(ob)
 
     if len(set(orders)) != len(orders):
-        # どれが重複しているか簡易で出す
         dup = sorted([x for x in set(orders) if orders.count(x) > 1])
         raise ValueError(f"orderB が重複しています: {dup}")
 
-    return sorted(questions, key=lambda q: q["_orderB"])
+    sorted_questions = sorted(questions, key=lambda q: q["_orderB"])
+
+    return non_questions + sorted_questions
 
 
 def excel_to_json_v2(ws, version="A"):
@@ -1070,8 +1084,9 @@ def excel_to_json_v2(ws, version="A"):
                 "src": make_src(row_i),
             }
 
-        elif tag == "pretext" and current_preline is not None:
-            current_preline["values"].append(conv_text(params[0]))
+        elif tag == "preline" and current_preline is not None:
+            if params and params[0] is not None and str(params[0]).strip() != "":
+                current_preline["values"].append(conv_text(params[0]))
 
         elif tag == "e_preline" and current_preline is not None:
             current_preline["src"]["row_end"] = row_i

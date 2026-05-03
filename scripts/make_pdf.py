@@ -294,7 +294,7 @@ def main() -> None:
         print(f"✅ TeX merged: {full_tex_path}")
 
         pdf_path = compile_lualatex(full_tex_path, runs=args.runs)
-        print(f"✅ PDF compiled: {pdf_path}")
+        print(f"🤩🤩🤩 PDF compiled: {pdf_path}")
 
     print("🎯 Done.")
 
