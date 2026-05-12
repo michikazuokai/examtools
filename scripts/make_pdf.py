@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-make_pdf.py  (V2)
+make_pdf.py
   body.tex + templates -> full .tex -> lualatex compile -> pdf
 
 This script does NOT:
@@ -13,15 +13,20 @@ It only:
   - reads work/{subject}.json
   - finds work/latex/{version}/{subject}_{version}_body.tex
   - checks source_excel_hash between JSON and body.tex
-  - copies templates into exam_dir/pdf/{version}/
-  - injects graphicspath for exam_dir/images/
-  - creates full tex
-  - runs lualatex
+  - creates a temporary build directory under /private/tmp/exam_build/{subject}/
+  - copies templates/body.tex/images into the temporary build directory
+  - injects graphicspath for the temporary images directory
+  - creates full tex in the temporary build directory
+  - runs lualatex in the temporary build directory
+  - copies only the generated PDF back to exam_dir/pdf/{version}/
 
 Usage:
   python scripts/make_pdf.py 1020201
   python scripts/make_pdf.py 1020201 --runs 2
+  python scripts/make_pdf.py 1020201 --keeptemp
 """
+
+from __future__ import annotations
 
 import argparse
 import json
@@ -30,7 +35,12 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
+
 from utils import add_subject_arg, load_exam_context
+
+
+TEMP_BUILD_BASE = Path("/private/tmp/exam_build")
+
 
 def project_root() -> Path:
     # scripts/ の1つ上を root とみなす
@@ -60,6 +70,7 @@ def find_body_tex(work_dir: Path, sheet: str, version: str) -> Path:
         return body_path
 
     raise FileNotFoundError(f"body.tex not found: {body_path}")
+
 
 def load_json_data(json_path: Path) -> dict:
     """
@@ -158,21 +169,49 @@ def copy_templates_to(build_dir: Path) -> None:
         shutil.copy2(src, build_dir / name)
 
 
-def inject_graphicspath(build_dir: Path, sheet: str) -> None:
+def copy_images_to_temp(exam_dir: Path, temp_root: Path) -> None:
     """
-    preamble.tex に \\graphicspath を注入する。
-    今回の出力構造:
-      exam_dir/
+    exam_dir/images を temp_root/images にコピーする。
+
+    一時ビルド構造:
+      /private/tmp/exam_build/{subject}/
         images/
-        pdf/
-          A/
-    なので、pdf/A から images へは ../../images/
+        A/
+        B/
+
+    A/B のビルドフォルダから画像フォルダへは ../images/ で参照する。
+    """
+    src_images = exam_dir / "images"
+    dst_images = temp_root / "images"
+
+    if not src_images.exists():
+        print(f"画像フォルダなし: {src_images}")
+        return
+
+    if dst_images.exists():
+        shutil.rmtree(dst_images)
+
+    shutil.copytree(src_images, dst_images)
+    print(f"画像コピー: {src_images} -> {dst_images}")
+
+
+def inject_graphicspath(build_dir: Path, graphicspath: str = "../images/") -> None:
+    """
+    preamble.tex に \graphicspath を注入する。
+
+    tempビルド構造:
+      temp_root/
+        images/
+        A/
+        B/
+
+    build_dir=A/B なので、画像フォルダへは ../images/。
     """
     preamble_path = build_dir / "preamble.tex"
     if not preamble_path.exists():
         raise FileNotFoundError(f"preamble.tex not found in build_dir: {preamble_path}")
 
-    gsp = r"\graphicspath{{../../images/}}" + "\n"
+    gsp = rf"\graphicspath{{{{{graphicspath}}}}}" + "\n"
 
     preamble = read_text(preamble_path)
 
@@ -184,6 +223,7 @@ def inject_graphicspath(build_dir: Path, sheet: str) -> None:
             preamble += "\n% --- auto inserted graphicspath ---\n" + gsp
 
     write_text(preamble_path, preamble)
+
 
 def build_full_tex(build_dir: Path, body_tex_filename: str, out_tex_filename: str) -> Path:
     """
@@ -215,9 +255,8 @@ def compile_lualatex(tex_path: Path, runs: int = 1) -> Path:
     build_dir = tex_path.parent
     for _ in range(max(1, runs)):
         run_cmd(
-#            ["lualatex", "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", tex_path.name],
             ["lualatex", "-file-line-error", "-interaction=nonstopmode", "-halt-on-error", tex_path.name],
-            cwd=build_dir
+            cwd=build_dir,
         )
 
     pdf_path = tex_path.with_suffix(".pdf")
@@ -238,10 +277,23 @@ def get_versions_from_json_data(data: dict) -> list[str]:
 
     return versions
 
+
+def prepare_temp_root(subject: str) -> Path:
+    """
+    今回の実行用tempルートを作り直す。
+    """
+    temp_root = TEMP_BUILD_BASE / subject
+    if temp_root.exists():
+        shutil.rmtree(temp_root)
+    temp_root.mkdir(parents=True, exist_ok=True)
+    return temp_root
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="LaTeX本文からPDFを作成します。")
     add_subject_arg(ap)
     ap.add_argument("--runs", type=int, default=2, help="lualatex runs")
+    ap.add_argument("--keeptemp", action="store_true", help="成功時もtempビルドフォルダを残す")
     args = ap.parse_args()
 
     exam_context = load_exam_context(args.subject, load_workbook=False)
@@ -252,6 +304,7 @@ def main() -> None:
     exam_dir = exam_context.exam_dir
 
     json_path = work_dir / f"{subject}.json"
+    temp_root = prepare_temp_root(subject)
 
     print(f"科目番号: {exam_context.subject}")
     print(f"年度: {exam_context.fsyear}")
@@ -259,44 +312,66 @@ def main() -> None:
     print(f"試験コマ番号: {exam_context.exam_koma_no}")
     print(f"入力JSON: {json_path}")
     print(f"入力TeX: {work_dir / 'latex'}")
+    print(f"temp build: {temp_root}")
     print(f"出力PDF: {exam_dir / 'pdf'}")
-
 
     json_data = load_json_data(json_path)
     versions = get_versions_from_json_data(json_data)
 
     print(f"出力版: {','.join(versions)}")
 
-    for ver in versions:
-        body_path = find_body_tex(work_dir, sheet, ver)
+    # 画像は各versionごとではなく、temp_root/images に一度だけコピーする
+    copy_images_to_temp(exam_dir, temp_root)
 
-        # hashチェック：body.tex が JSON と同じExcel由来か確認する
-        source_hash = require_body_matches_json(body_path, json_data, ver)
-        print(f"source_excel_hash({ver}): {source_hash}")
+    try:
+        for ver in versions:
+            body_path = find_body_tex(work_dir, sheet, ver)
 
-        # コンパイル先
-        out_dir = exam_dir / "pdf" / ver
-        out_dir.mkdir(parents=True, exist_ok=True)
+            # hashチェック：body.tex が JSON と同じExcel由来か確認する
+            source_hash = require_body_matches_json(body_path, json_data, ver)
+            print(f"source_excel_hash({ver}): {source_hash}")
 
-        copy_templates_to(out_dir)
+            # temp内のコンパイル先
+            build_dir = temp_root / ver
+            build_dir.mkdir(parents=True, exist_ok=True)
 
-        # 画像パス注入
-        inject_graphicspath(out_dir, sheet)
+            copy_templates_to(build_dir)
 
-        body_name = f"{sheet}_{ver}_body.tex"
-        dst_body = out_dir / body_name
+            # temp_root/images を参照する
+            inject_graphicspath(build_dir, "../images/")
 
-        if body_path.resolve() != dst_body.resolve():
+            body_name = f"{sheet}_{ver}_body.tex"
+            dst_body = build_dir / body_name
             shutil.copy2(body_path, dst_body)
 
-        full_name = f"{sheet}_{ver}.tex"
-        full_tex_path = build_full_tex(out_dir, body_name, full_name)
-        print(f"✅ TeX merged: {full_tex_path}")
+            full_name = f"{sheet}_{ver}.tex"
+            full_tex_path = build_full_tex(build_dir, body_name, full_name)
+            print(f"✅ TeX merged: {full_tex_path}")
 
-        pdf_path = compile_lualatex(full_tex_path, runs=args.runs)
-        print(f"🤩🤩🤩 PDF compiled: {pdf_path}")
+            temp_pdf_path = compile_lualatex(full_tex_path, runs=args.runs)
+            print(f"🤩🤩🤩 PDF compiled in temp: {temp_pdf_path}")
+
+            # 成功したPDFだけ元フォルダへコピーする
+            final_out_dir = exam_dir / "pdf" / ver
+            final_out_dir.mkdir(parents=True, exist_ok=True)
+            final_pdf_path = final_out_dir / temp_pdf_path.name
+            shutil.copy2(temp_pdf_path, final_pdf_path)
+            print(f"✅ PDF copied: {final_pdf_path}")
+
+    except Exception:
+        print()
+        print("🙅🏻‍♂️ PDF作成中にエラーが発生しました。")
+        print(f"ログ確認用にtempを残します: {temp_root}")
+        raise
+
+    if args.keeptemp:
+        print(f"tempを残しました: {temp_root}")
+    else:
+        shutil.rmtree(temp_root, ignore_errors=True)
+        print(f"tempを削除しました: {temp_root}")
 
     print("🎯 Done.")
+
 
 if __name__ == "__main__":
     try:

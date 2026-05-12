@@ -342,7 +342,11 @@
     top=1mm,
     bottom=1mm,
     before skip=0mm,
-    after skip=1\baselineskip
+    after skip=1\baselineskip,
+    % --- ここを追加 ---
+    valign=center, 
+    % もしボックスに固定の高さを指定している場合は以下のように記述します
+    % height=3cm, % 例：高さを固定にする場合
   ]
 }{%
   \end{tcolorbox}
