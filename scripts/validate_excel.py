@@ -13,7 +13,7 @@ import openpyxl
 from openpyxl.comments import Comment
 from openpyxl.styles import PatternFill, Font
 
-from utils import (
+from exam_utils import (
     calc_excel_hash,
     get_qpattern,
     add_subject_arg,

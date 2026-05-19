@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from utils import add_subject_arg, load_exam_context, get_qpattern
+from exam_utils import add_subject_arg, load_exam_context, get_qpattern
 
 import json
 from pathlib import Path
@@ -11,13 +11,14 @@ from datetime import datetime
 from typing import Optional
 
 # 既存プロジェクトの共通ユーティリティ（v1と同じ）
-from utils import (
+from exam_utils import (
     add_subject_arg,
     load_exam_context,
     get_qpattern,
     setspace,
     parse_with_number,
     calc_excel_hash,
+    write_exam_path_to_slideinfo,
 )
 from versioncontrol_yaml import ensure_version_entry
 
@@ -498,7 +499,7 @@ def excel_to_json_v2(ws, version="A"):
 
         elif tag == "anssize" and current_exam is not None:
             # 既存 setspace を流用（"(50,60)" → [50.0,60.0]）
-            from utils import setspace as _setspace
+            from exam_utils import setspace as _setspace
             current_exam["anssize"] = list(_setspace(params[0], "ANSSIZE"))
 
         elif tag == "e_exam" and current_exam is not None:
@@ -1414,6 +1415,15 @@ def main() -> None:
 
     print(f"✅ jsonファイルを作成しました: {out}")
 
+    slideinfo_path = write_exam_path_to_slideinfo(
+        subject_no,
+        exam_context.fsyear,
+        "exam_json",
+        out,
+    )
+
+    print(f"✅ slideinfo.yaml 更新: {slideinfo_path}")
+
 if __name__ == "__main__":
     try:
         main()
@@ -1424,7 +1434,9 @@ if __name__ == "__main__":
             import traceback
             traceback.print_exc()
         else:
+            import traceback
             print()
             print("🙅🏻‍♂️ エラー:")
+            traceback.print_exc()
             print(e)
         raise SystemExit(1)

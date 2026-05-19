@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from utils import add_subject_arg, load_exam_context
+from exam_utils import add_subject_arg, load_exam_context
 
 
 TEMP_BUILD_BASE = Path("/private/tmp/exam_build")

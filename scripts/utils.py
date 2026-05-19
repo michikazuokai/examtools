@@ -257,6 +257,102 @@ def load_slideinfo_by_subno(target_sub_no: str, target_year: str) -> tuple[dict,
 
     return slideinfo, sub_folder
 
+# def write_ans_json_to_slideinfo(
+#     subject: str,
+#     target_year: str,
+#     ans_json_path: Path,
+# ) -> Path:
+#     """
+#     slideinfo.yaml の exam -> exam -> ans_json に解答用JSONのパスを書き込む。
+
+#     例:
+#       exam:
+#         exam:
+#           ans_json: /path/to/work/2031002_ans.json
+#     """
+#     slideinfo, sub_folder = load_slideinfo_by_subno(subject, target_year)
+
+#     slideinfo_path = sub_folder / "slideinfo" / "slideinfo.yaml"
+
+#     if not slideinfo_path.exists():
+#         raise FileNotFoundError(f"slideinfo.yaml が見つかりません: {slideinfo_path}")
+
+#     # 念のためファイルから読み直す
+#     with open(slideinfo_path, "r", encoding="utf-8") as f:
+#         data = yaml.safe_load(f) or {}
+
+#     if "exam" not in data or data["exam"] is None:
+#         data["exam"] = {}
+
+#     if not isinstance(data["exam"], dict):
+#         raise ValueError("slideinfo.yaml の exam キーが辞書ではありません。")
+
+#     if "exam" not in data["exam"] or data["exam"]["exam"] is None:
+#         data["exam"]["exam"] = {}
+
+#     if not isinstance(data["exam"]["exam"], dict):
+#         raise ValueError("slideinfo.yaml の exam -> exam が辞書ではありません。")
+
+#     data["exam"]["exam"]["ans_json"] = str(Path(ans_json_path))
+
+#     with open(slideinfo_path, "w", encoding="utf-8") as f:
+#         yaml.safe_dump(
+#             data,
+#             f,
+#             allow_unicode=True,
+#             sort_keys=False,
+#         )
+
+#     return slideinfo_path
+
+def write_exam_path_to_slideinfo(
+    subject: str,
+    target_year: str,
+    key_name: str,
+    file_path: Path,
+) -> Path:
+    """
+    slideinfo.yaml の exam -> exam -> key_name にパスを書き込む。
+
+    例:
+      exam:
+        exam:
+          exam_json: /path/to/work/2031002.json
+          ans_json: /path/to/work/2031002_ans.json
+    """
+    slideinfo, sub_folder = load_slideinfo_by_subno(subject, target_year)
+
+    slideinfo_path = sub_folder / "slideinfo" / "slideinfo.yaml"
+
+    if not slideinfo_path.exists():
+        raise FileNotFoundError(f"slideinfo.yaml が見つかりません: {slideinfo_path}")
+
+    with open(slideinfo_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+
+    if "exam" not in data or data["exam"] is None:
+        data["exam"] = {}
+
+    if not isinstance(data["exam"], dict):
+        raise ValueError("slideinfo.yaml の exam キーが辞書ではありません。")
+
+    if "exam" not in data["exam"] or data["exam"]["exam"] is None:
+        data["exam"]["exam"] = {}
+
+    if not isinstance(data["exam"]["exam"], dict):
+        raise ValueError("slideinfo.yaml の exam -> exam が辞書ではありません。")
+
+    data["exam"]["exam"][key_name] = str(Path(file_path))
+
+    with open(slideinfo_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            data,
+            f,
+            allow_unicode=True,
+            sort_keys=False,
+        )
+
+    return slideinfo_path
 
 def get_nenji_by_subno(sub_no: str, target_year: str) -> str | None:
     """

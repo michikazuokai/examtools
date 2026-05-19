@@ -29,7 +29,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from utils import add_subject_arg, load_exam_context
+from exam_utils import add_subject_arg, load_exam_context
 
 import re
 from datetime import datetime

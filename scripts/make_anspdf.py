@@ -4,12 +4,13 @@ from copy import deepcopy
 import json
 from ansmake1 import make_pdf
 from datetime import datetime
-from utils import (
+from exam_utils import (
     add_subject_arg,
     load_exam_context,
     setspace,
     calc_excel_hash,
     get_nenji_by_subno,
+    write_exam_path_to_slideinfo,
 )
 from versioncontrol import ensure_version_entry
 import re
@@ -586,6 +587,15 @@ def main() -> None:
         json.dump(outjson, f, ensure_ascii=False, indent=2)
 
     print(f"\n✅ 解答用JSON出力: {ans_json_path}")
+
+    slideinfo_path = write_exam_path_to_slideinfo(
+        subject,
+        exam_context.fsyear,
+        "ans_json",
+        ans_json_path,
+    )
+
+    print(f"✅ slideinfo.yaml 更新: {slideinfo_path}")
 
     for v in outjson["versions"]:
         ver = v["version"]
